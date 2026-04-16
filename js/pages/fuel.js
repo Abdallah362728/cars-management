@@ -159,9 +159,12 @@ function openAddFuelModal(state, onSaved) {
           <input type="number" name="total_cost" inputmode="decimal" step="0.01" placeholder="0.00" required>
         </div>
       </div>
-      <div class="flex items-center gap-3 py-1">
-        <input type="checkbox" name="is_full_tank" id="full-tank" checked class="w-5 h-5 rounded accent-blue-500">
-        <label for="full-tank" class="text-slate-300 text-sm">Full tank</label>
+      <div>
+        <input type="hidden" name="is_full_tank" id="full-tank-input" value="on">
+        <button type="button" id="full-tank-btn"
+          class="w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50">
+          Full Tank
+        </button>
       </div>
       <div>
         <label class="section-label">Notes (optional)</label>
@@ -170,6 +173,18 @@ function openAddFuelModal(state, onSaved) {
       ${modalFooter('Cancel', 'Save Fill-up')}
     </form>
   `)
+
+  const fullTankBtn   = document.getElementById('full-tank-btn')
+  const fullTankInput = document.getElementById('full-tank-input')
+  fullTankBtn.addEventListener('click', () => {
+    const active = fullTankInput.value === 'on'
+    fullTankInput.value = active ? 'off' : 'on'
+    if (!active) {
+      fullTankBtn.className = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50'
+    } else {
+      fullTankBtn.className = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-slate-700/50 text-slate-500 border border-slate-600/40'
+    }
+  })
 
   document.getElementById('fuel-form').addEventListener('submit', async e => {
     e.preventDefault()
