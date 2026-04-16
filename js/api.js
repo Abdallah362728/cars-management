@@ -54,7 +54,7 @@ export async function getFuelLogs(carId) {
     const prev     = i > 0 ? data[i - 1] : null
     const distance = prev ? row.odometer_km - prev.odometer_km : null
     const days     = prev ? daysBetween(prev.date, row.date) : null
-    const l100     = (distance && distance > 0 && row.is_full_tank !== false)
+    const l100     = (distance && distance > 0)
       ? round(row.liters / distance * 100, 1) : null
     const eurKm    = (distance && distance > 0)
       ? round(row.total_cost / distance, 3) : null
@@ -120,7 +120,7 @@ export async function getDashboard(car) {
   const enriched = (fuel || []).map((row, i, arr) => {
     const prev     = arr[i - 1]
     const distance = prev ? row.odometer_km - prev.odometer_km : null
-    const l100     = (distance && distance > 0 && row.is_full_tank !== false)
+    const l100     = (distance && distance > 0)
       ? round(row.liters / distance * 100, 1) : null
     return { ...row, l_per_100km: l100, distance_km: distance }
   })
