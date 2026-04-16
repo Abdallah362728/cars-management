@@ -1,4 +1,4 @@
-const CACHE = 'cars-v1'
+const CACHE = 'cars-v2'
 const STATIC = ['/', '/index.html', '/manifest.json', '/js/app.js', '/js/api.js', '/js/supabase-client.js',
   '/js/components/nav.js', '/js/components/modal.js', '/js/components/toast.js',
   '/js/pages/dashboard.js', '/js/pages/fuel.js', '/js/pages/costs.js', '/js/pages/additional.js']
