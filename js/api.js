@@ -134,10 +134,14 @@ export async function getDashboard(car) {
   const lastOdometer   = lastFuel?.odometer_km ?? null
 
   // Cost per km (fuel only, over total distance driven)
+  // Skip fill-up[0] — it sets the odometer baseline but its distance isn't tracked yet.
+  // Each subsequent fill-up's cost covers the leg driven since the previous fill-up.
   const firstFuel      = fuel?.[0] ?? null
   const totalKm        = (lastFuel && firstFuel && lastFuel !== firstFuel)
     ? lastFuel.odometer_km - firstFuel.odometer_km : null
-  const costPerKm      = (totalKm && totalKm > 0) ? round(totalFuel / totalKm, 3) : null
+  const fuelCostForDistance = fuel && fuel.length > 1 ? round(sum(fuel.slice(1), 'total_cost')) : 0
+  const costPerKm      = (totalKm && totalKm > 0 && fuelCostForDistance > 0)
+    ? round(fuelCostForDistance / totalKm, 3) : null
 
   // This month spend
   const thisMonthKey   = new Date().toISOString().slice(0, 7)
