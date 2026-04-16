@@ -143,20 +143,20 @@ function openAddFuelModal(state, onSaved) {
     <form id="fuel-form" class="space-y-4">
       <div>
         <label class="section-label">Date</label>
-        <input type="date" name="date" value="${today}" required>
+        <input type="date" name="date" value="${today}" required autocomplete="off">
       </div>
       <div>
         <label class="section-label">Odometer (km)</label>
-        <input type="number" name="odometer_km" inputmode="decimal" placeholder="178917" required style="font-size:22px;font-weight:700;">
+        <input type="number" name="odometer_km" inputmode="decimal" placeholder="178917" required autocomplete="off" style="font-size:22px;font-weight:700;">
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="section-label">Liters</label>
-          <input type="number" name="liters" inputmode="decimal" step="0.01" placeholder="0.00" required>
+          <input type="number" name="liters" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off">
         </div>
         <div>
           <label class="section-label">Total Cost (€)</label>
-          <input type="number" name="total_cost" inputmode="decimal" step="0.01" placeholder="0.00" required>
+          <input type="number" name="total_cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off">
         </div>
       </div>
       <div>
@@ -168,7 +168,7 @@ function openAddFuelModal(state, onSaved) {
       </div>
       <div>
         <label class="section-label">Notes (optional)</label>
-        <input type="text" name="notes" placeholder="e.g. Highway fill-up">
+        <input type="text" name="notes" placeholder="e.g. Highway fill-up" autocomplete="off">
       </div>
       ${modalFooter('Cancel', 'Save Fill-up')}
     </form>

@@ -167,25 +167,25 @@ function openAddCostModal(state, onSaved) {
       <input type="hidden" name="cost_type" value="maintenance">
       <div>
         <label class="section-label">Date</label>
-        <input type="date" name="date" value="${today}" required>
+        <input type="date" name="date" value="${today}" required autocomplete="off">
       </div>
       <div>
         <label class="section-label">Description</label>
-        <input type="text" name="description" placeholder="e.g. Front brake pads" required>
+        <input type="text" name="description" placeholder="e.g. Front brake pads" required autocomplete="off">
       </div>
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label class="section-label">Cost (€)</label>
-          <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required style="font-size:20px;font-weight:700;">
+          <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:20px;font-weight:700;">
         </div>
         <div>
           <label class="section-label">Odometer (km)</label>
-          <input type="number" name="odometer_km" inputmode="decimal" placeholder="optional">
+          <input type="number" name="odometer_km" inputmode="decimal" placeholder="optional" autocomplete="off">
         </div>
       </div>
       <div>
         <label class="section-label">Notes (optional)</label>
-        <input type="text" name="notes" placeholder="">
+        <input type="text" name="notes" placeholder="" autocomplete="off">
       </div>
       ${modalFooter('Cancel', 'Save Cost')}
     </form>

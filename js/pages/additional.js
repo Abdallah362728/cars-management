@@ -108,19 +108,19 @@ function openMarkDoneModal(item, state, onSaved) {
     <form id="done-form" class="space-y-4">
       <div>
         <label class="section-label">Date Completed</label>
-        <input type="date" name="done_date" value="${today}" required>
+        <input type="date" name="done_date" value="${today}" required autocomplete="off">
       </div>
       <div>
         <label class="section-label">Odometer at time (km)</label>
-        <input type="number" name="done_km" inputmode="decimal" placeholder="optional" style="font-size:20px;font-weight:700;">
+        <input type="number" name="done_km" inputmode="decimal" placeholder="optional" autocomplete="off" style="font-size:20px;font-weight:700;">
       </div>
       <div>
         <label class="section-label">Cost (€)</label>
-        <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00">
+        <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" autocomplete="off">
       </div>
       <div>
         <label class="section-label">Notes (optional)</label>
-        <input type="text" name="notes" placeholder="">
+        <input type="text" name="notes" placeholder="" autocomplete="off">
       </div>
       ${modalFooter('Cancel', 'Mark as Done')}
     </form>
