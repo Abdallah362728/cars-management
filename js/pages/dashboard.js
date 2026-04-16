@@ -103,7 +103,7 @@ export async function render(container, state) {
         </div>
         ${state.activeCar.factory_fuel_spec ? `
           <div class="flex items-center gap-2 mt-2">
-            <div class="flex-1 border-t border-dashed border-red-400/40"></div>
+            <svg width="18" height="6" viewBox="0 0 18 6"><line x1="0" y1="3" x2="18" y2="3" stroke="rgba(248,113,113,0.7)" stroke-width="1.5" stroke-dasharray="5,4"/></svg>
             <span class="text-red-400 text-[10px]">Factory: ${state.activeCar.factory_fuel_spec} L/100km</span>
           </div>` : ''}
       </div>
@@ -184,11 +184,13 @@ export async function render(container, state) {
     }]
     if (factorLine) ds.push({
       data: factorLine,
-      borderColor: 'rgba(248,113,113,0.4)',
+      borderColor: 'rgba(248,113,113,0.7)',
       borderWidth: 1.5,
       borderDash: [5, 4],
+      segment: { borderDash: () => [5, 4] },
       pointRadius: 0,
       fill: false,
+      tension: 0,
     })
 
     charts.push(new Chart(trendCanvas, {
