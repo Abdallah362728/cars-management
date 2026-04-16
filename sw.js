@@ -16,6 +16,12 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url)
 
+  // Localhost — always network so dev changes show immediately
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+    e.respondWith(fetch(e.request))
+    return
+  }
+
   // Supabase API — always network, no cache
   if (url.hostname.includes('supabase')) {
     e.respondWith(fetch(e.request))
