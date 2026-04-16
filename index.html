@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cars">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <title>Cars Manager</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js (UMD — accessed as window.Chart in ES modules) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #0f172a;
+      overscroll-behavior: none;
+      min-height: 100dvh;
+    }
+    /* Safe area for notched phones */
+    #main  { padding-bottom: calc(72px + env(safe-area-inset-bottom)); }
+    #nav   { padding-bottom: env(safe-area-inset-bottom); }
+    #fab   { bottom: calc(80px + env(safe-area-inset-bottom)); }
+
+    /* Scrollbar hide */
+    ::-webkit-scrollbar { display: none; }
+    * { scrollbar-width: none; }
+
+    /* Slide-up modal animation */
+    #modal-sheet { animation: slideUp 0.25s ease; }
+    @keyframes slideUp { from { transform: translateY(60px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+    /* Input styling */
+    input, select, textarea {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 14px;
+      padding: 13px 16px;
+      color: white;
+      font-size: 15px;
+      width: 100%;
+      box-sizing: border-box;
+      outline: none;
+      transition: border-color 0.2s;
+      -webkit-appearance: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: #3b82f6; }
+    input[type="checkbox"] { width: auto; }
+    select option { background: #1e293b; }
+
+    /* Card style */
+    .card {
+      background: #1e293b;
+      border-radius: 18px;
+      padding: 16px;
+      border: 1px solid rgba(255,255,255,0.04);
+    }
+
+    /* Pills */
+    .pill { display: inline-flex; align-items: center; gap: 3px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .pill-red    { background: rgba(239,68,68,0.15);   color: #f87171; }
+    .pill-green  { background: rgba(34,197,94,0.15);   color: #4ade80; }
+    .pill-amber  { background: rgba(245,158,11,0.15);  color: #fbbf24; }
+    .pill-indigo { background: rgba(99,102,241,0.15);  color: #a5b4fc; }
+    .pill-blue   { background: rgba(59,130,246,0.15);  color: #93c5fd; }
+
+    /* Skeleton loader */
+    .skeleton { background: linear-gradient(90deg, #1e293b 25%, #2d3f55 50%, #1e293b 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: 10px; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* FAB */
+    #fab {
+      position: fixed;
+      right: 20px;
+      width: 54px;
+      height: 54px;
+      background: linear-gradient(135deg, #3b82f6, #6366f1);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 24px rgba(99,102,241,0.5);
+      cursor: pointer;
+      z-index: 40;
+      transition: transform 0.15s, opacity 0.2s;
+      border: none;
+    }
+    #fab:active { transform: scale(0.9); }
+    #fab.hidden-fab { opacity: 0; pointer-events: none; }
+
+    /* Section label */
+    .section-label { color: #475569; font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; margin-bottom: 10px; display: block; }
+  </style>
+</head>
+<body class="text-white">
+
+  <!-- Main content area -->
+  <main id="main" class="max-w-lg mx-auto min-h-dvh">
+    <div id="app">
+      <!-- Loading state -->
+      <div class="flex flex-col items-center justify-center min-h-dvh gap-3">
+        <div class="w-14 h-14 bg-blue-500/10 rounded-2xl flex items-center justify-center border border-blue-500/20">
+          <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round">
+            <path d="M7 17m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M17 17m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0"/>
+            <path d="M5 17H3V11L5 6H19L21 11V17H19M9 17H15M9 11H19M9 11H5"/>
+          </svg>
+        </div>
+        <p class="text-slate-400 text-sm">Loading Cars Manager…</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bottom Navigation -->
+  <nav id="nav" class="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur border-t border-slate-800 z-30 max-w-lg mx-auto" style="left:50%;transform:translateX(-50%);width:100%;max-width:512px;">
+    <div class="flex">
+      <button class="nav-btn flex-1 flex flex-col items-center py-2.5 text-slate-500" data-hash="#dashboard">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+        <span class="text-[10px] mt-1">Home</span>
+      </button>
+      <button class="nav-btn flex-1 flex flex-col items-center py-2.5 text-slate-500" data-hash="#fuel">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 22V9l5-7h8l5 7v13H3z"/><path d="M3 9h18"/><path d="M9 22V12h6v10"/></svg>
+        <span class="text-[10px] mt-1">Fuel</span>
+      </button>
+      <button class="nav-btn flex-1 flex flex-col items-center py-2.5 text-slate-500" data-hash="#costs">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+        <span class="text-[10px] mt-1">Costs</span>
+      </button>
+      <button class="nav-btn flex-1 flex flex-col items-center py-2.5 text-slate-500" data-hash="#additional">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M6.34 17.66l-1.41 1.41M2 12h2M20 12h2M19.07 19.07l-1.41-1.41M6.34 6.34L4.93 4.93M12 2v2M12 20v2"/></svg>
+        <span class="text-[10px] mt-1">Additional</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- Floating Action Button -->
+  <button id="fab" onclick="window.__openAddModal && window.__openAddModal()" aria-label="Add entry">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+    </svg>
+  </button>
+
+  <!-- Modal overlay -->
+  <div id="modal" class="fixed inset-0 z-50 hidden bg-black/60 flex items-end max-w-lg mx-auto" style="left:50%;transform:translateX(-50%);width:100%;max-width:512px;" onclick="if(event.target===this)window.__closeModal&&window.__closeModal()">
+    <div id="modal-sheet" class="bg-slate-800 rounded-t-3xl w-full max-h-[90dvh] overflow-y-auto border-t border-slate-700">
+      <div id="modal-body" class="p-5 pb-10"></div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toasts" class="fixed top-4 left-0 right-0 z-[60] flex flex-col items-center gap-2 pointer-events-none max-w-lg mx-auto px-4" style="left:50%;transform:translateX(-50%);width:100%;max-width:512px;"></div>
+
+  <script type="module" src="/js/app.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {})
+    }
+  </script>
+</body>
+</html>

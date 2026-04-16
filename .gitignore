@@ -1,0 +1,17 @@
+# Claude Code internal config
+.claude/
+
+# Excel data files (data lives in Supabase)
+*.xlsx
+*.xls
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+
+# Crash dumps
+*.stackdump
