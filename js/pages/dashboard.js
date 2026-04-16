@@ -167,8 +167,8 @@ export async function render(container, state) {
 
   const trendCanvas = document.getElementById('trend-chart')
   if (trendCanvas && data.trend.length > 0) {
-    const factorLine = state.activeCar.factory_fuel_spec
-      ? data.trend.map(() => state.activeCar.factory_fuel_spec) : null
+    const factorySpec = parseFloat(state.activeCar.factory_fuel_spec)
+    const factorLine = !isNaN(factorySpec) ? data.trend.map(() => factorySpec) : null
 
     const ds = [{
       data: data.trend.map(t => t.value),
@@ -186,7 +186,6 @@ export async function render(container, state) {
       data: factorLine,
       borderColor: 'rgba(248,113,113,0.7)',
       borderWidth: 1.5,
-      borderDash: [5, 4],
       segment: { borderDash: () => [5, 4] },
       pointRadius: 0,
       fill: false,
