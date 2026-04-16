@@ -1,10 +1,6 @@
-const CACHE = 'cars-v2'
-const STATIC = ['/', '/index.html', '/manifest.json', '/js/app.js', '/js/api.js', '/js/supabase-client.js',
-  '/js/components/nav.js', '/js/components/modal.js', '/js/components/toast.js',
-  '/js/pages/dashboard.js', '/js/pages/fuel.js', '/js/pages/costs.js', '/js/pages/additional.js']
+const CACHE = 'cars-v3'
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(STATIC).catch(() => {})))
   self.skipWaiting()
 })
 
@@ -40,12 +36,12 @@ self.addEventListener('fetch', e => {
     return
   }
 
-  // App static files — cache first
+  // App files — network first so deploys show immediately, cache as offline fallback
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).then(r => {
+    fetch(e.request).then(r => {
       const clone = r.clone()
       caches.open(CACHE).then(c => c.put(e.request, clone))
       return r
-    }))
+    }).catch(() => caches.match(e.request))
   )
 })
