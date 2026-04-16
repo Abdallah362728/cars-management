@@ -168,41 +168,59 @@ export async function render(container, state) {
   const trendCanvas = document.getElementById('trend-chart')
   if (trendCanvas && data.trend.length > 0) {
     const factorySpec = parseFloat(state.activeCar.factory_fuel_spec)
-    const factorLine = !isNaN(factorySpec) ? data.trend.map(() => factorySpec) : null
 
-    const ds = [{
-      data: data.trend.map(t => t.value),
-      borderColor: '#60a5fa',
-      backgroundColor: 'rgba(96,165,250,0.08)',
-      borderWidth: 2.5,
-      pointRadius: 4,
-      pointBackgroundColor: '#60a5fa',
-      pointBorderColor: '#0f172a',
-      pointBorderWidth: 2,
-      fill: true,
-      tension: 0.4,
-    }]
-    if (factorLine) ds.push({
-      data: factorLine,
-      borderColor: 'rgba(248,113,113,0.7)',
-      borderWidth: 1.5,
-      segment: { borderDash: () => [5, 4] },
-      pointRadius: 0,
-      fill: false,
-      tension: 0,
-    })
+    const factoryLinePlugin = {
+      id: 'factoryLine',
+      afterDraw(chart) {
+        if (isNaN(factorySpec)) return
+        const { ctx, chartArea, scales } = chart
+        const y = scales.y.getPixelForValue(factorySpec)
+        if (y < chartArea.top || y > chartArea.bottom) return
+        ctx.save()
+        ctx.strokeStyle = 'rgba(248,113,113,0.85)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([5, 4])
+        ctx.beginPath()
+        ctx.moveTo(chartArea.left, y)
+        ctx.lineTo(chartArea.right, y)
+        ctx.stroke()
+        ctx.restore()
+      },
+    }
 
     charts.push(new Chart(trendCanvas, {
       type: 'line',
-      data: { labels: data.trend.map(t => t.label), datasets: ds },
+      data: {
+        labels: data.trend.map(t => t.label),
+        datasets: [{
+          data: data.trend.map(t => t.value),
+          borderColor: '#60a5fa',
+          backgroundColor: 'rgba(96,165,250,0.08)',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointBackgroundColor: '#60a5fa',
+          pointBorderColor: '#0f172a',
+          pointBorderWidth: 2,
+          fill: true,
+          tension: 0.4,
+        }],
+      },
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, callbacks: { label: c => ` ${c.parsed.y} L/100km` } } },
         scales: {
           x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { font: { size: 10 } } },
-          y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { font: { size: 10 }, callback: v => v + 'L' } },
+          y: {
+            grid: { color: 'rgba(255,255,255,0.03)' },
+            ticks: { font: { size: 10 }, callback: v => v + 'L' },
+            ...(!isNaN(factorySpec) && {
+              min: Math.min(...data.trend.map(t => t.value), factorySpec) * 0.95,
+              max: Math.max(...data.trend.map(t => t.value), factorySpec) * 1.05,
+            }),
+          },
         },
       },
+      plugins: [factoryLinePlugin],
     }))
   }
 
