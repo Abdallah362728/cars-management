@@ -1,8 +1,7 @@
-import { getDashboard } from '../api.js'
+import { getDashboard, addFuelLog } from '../api.js'
 import { renderCarHeader } from '../app.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
-import { addFuelLog } from '../api.js'
 
 let charts = []
 
@@ -12,6 +11,10 @@ export function cleanup() {
 }
 
 export async function render(container, state) {
+  // Destroy any charts from a previous render on this page (car-switch, etc.)
+  // to avoid leaking Chart.js instances attached to now-removed canvases.
+  cleanup()
+
   if (!state.activeCar) {
     container.innerHTML = `<div class="flex items-center justify-center p-8 text-slate-500 text-sm" style="min-height:60dvh">No active car found.</div>`
     return
@@ -286,13 +289,15 @@ function openAddFuelModal(state, onSaved) {
     btn.textContent = 'Saving…'
     btn.disabled = true
 
+    const liters = parseFloat(fd.get('liters'))
+    const cost   = parseFloat(fd.get('total_cost'))
     try {
       await addFuelLog(state.activeCar.id, {
         date:         fd.get('date'),
         odometer_km:  parseFloat(fd.get('odometer_km')),
-        liters:       parseFloat(fd.get('liters')),
-        total_cost:   parseFloat(fd.get('total_cost')),
-        price_per_liter: parseFloat(fd.get('total_cost')) / parseFloat(fd.get('liters')),
+        liters,
+        total_cost:   cost,
+        price_per_liter: liters > 0 ? cost / liters : null,
         is_full_tank: fd.get('is_full_tank') === 'on',
         notes:        fd.get('notes') || null,
         currency:     'EUR',

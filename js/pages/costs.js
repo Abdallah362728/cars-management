@@ -1,4 +1,4 @@
-import { getAllCosts, addCost, deleteCost } from '../api.js'
+import { getAllCosts, addCost, deleteCost, esc } from '../api.js'
 import { renderCarHeader } from '../app.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
@@ -120,8 +120,8 @@ export async function render(container, state) {
           <div class="card flex items-center gap-3 mb-2">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base" style="background:rgba(100,116,139,0.15)">${meta.emoji}</div>
             <div class="flex-1 min-w-0">
-              <p class="text-white text-sm font-semibold truncate">${label}</p>
-              <p class="text-slate-500 text-xs">${date}</p>
+              <p class="text-white text-sm font-semibold truncate">${esc(label)}</p>
+              <p class="text-slate-500 text-xs">${esc(date)}</p>
             </div>
             <div class="text-right flex-shrink-0">
               <p class="text-white font-bold">€${Number(cost.cost).toFixed(2)}</p>
@@ -173,15 +173,13 @@ function openAddCostModal(state, onSaved) {
         <label class="section-label">Description</label>
         <input type="text" name="description" placeholder="e.g. Front brake pads" required autocomplete="off">
       </div>
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label class="section-label">Cost (€)</label>
-          <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:20px;font-weight:700;">
-        </div>
-        <div>
-          <label class="section-label">Odometer (km)</label>
-          <input type="number" name="odometer_km" inputmode="decimal" placeholder="optional" autocomplete="off">
-        </div>
+      <div>
+        <label class="section-label">Cost (€)</label>
+        <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:20px;font-weight:700;">
+      </div>
+      <div id="odometer-field">
+        <label class="section-label">Odometer (km)</label>
+        <input type="number" name="odometer_km" inputmode="decimal" placeholder="optional" autocomplete="off">
       </div>
       <div>
         <label class="section-label">Notes (optional)</label>
@@ -200,8 +198,8 @@ function openAddCostModal(state, onSaved) {
       btn.className = btn.className.replace('bg-slate-900 text-slate-400 border-slate-700', 'bg-blue-500 text-white border-transparent')
       document.querySelector('[name="cost_type"]').value = btn.dataset.type
 
-      // Show/hide odometer field
-      const odoField = document.querySelector('[name="odometer_km"]')?.closest('div')?.parentElement
+      // Show/hide odometer field (maintenance only)
+      const odoField = document.getElementById('odometer-field')
       if (odoField) odoField.style.display = btn.dataset.type === 'maintenance' ? '' : 'none'
     })
   })
@@ -215,19 +213,20 @@ function openAddCostModal(state, onSaved) {
     btn.disabled = true
 
     const payload = {
-      date:        fd.get('date'),
       cost:        parseFloat(fd.get('cost')),
       currency:    'EUR',
       notes:       fd.get('notes') || null,
     }
 
     // Map field names to table column names
+    // insurance_records uses start_date (no `date` column); all other tables use `date`.
+    const date = fd.get('date')
     const desc = fd.get('description')
-    if (type === 'maintenance')  { payload.description = desc; const o = fd.get('odometer_km'); if (o) payload.odometer_km = parseFloat(o) }
-    if (type === 'supplies')     payload.item = desc
-    if (type === 'insurance')    { payload.provider = desc; payload.start_date = fd.get('date') }
-    if (type === 'registration') payload.description = desc
-    if (type === 'other')        payload.description = desc
+    if (type === 'maintenance')  { payload.date = date; payload.description = desc; const o = fd.get('odometer_km'); if (o) payload.odometer_km = parseFloat(o) }
+    if (type === 'supplies')     { payload.date = date; payload.item = desc }
+    if (type === 'insurance')    { payload.start_date = date; payload.provider = desc }
+    if (type === 'registration') { payload.date = date; payload.description = desc }
+    if (type === 'other')        { payload.date = date; payload.description = desc }
 
     try {
       await addCost(type, state.activeCar.id, payload)

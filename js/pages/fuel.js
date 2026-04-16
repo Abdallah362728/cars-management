@@ -1,4 +1,4 @@
-import { getFuelLogs, addFuelLog, deleteFuelLog } from '../api.js'
+import { getFuelLogs, addFuelLog, deleteFuelLog, esc } from '../api.js'
 import { renderCarHeader } from '../app.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
@@ -105,7 +105,7 @@ export async function render(container, state) {
             <div><p class="text-slate-500 text-[10px] uppercase">€/km</p><p class="${colorClass} text-sm font-semibold">${log.eur_per_km ?? '—'}</p></div>
             <div><p class="text-slate-500 text-[10px] uppercase">Days</p><p class="text-white text-sm font-semibold">${log.days_since_last ?? '—'}</p></div>
           </div>` : ''}
-          ${log.notes ? `<p class="text-slate-500 text-xs mt-2 pt-2 border-t border-slate-700/60">📝 ${log.notes}</p>` : ''}
+          ${log.notes ? `<p class="text-slate-500 text-xs mt-2 pt-2 border-t border-slate-700/60">📝 ${esc(log.notes)}</p>` : ''}
           <div class="flex justify-end mt-2 pt-2 border-t border-slate-700/60">
             <button data-id="${log.id}" class="delete-fuel-btn text-red-400/60 text-xs hover:text-red-400">Delete</button>
           </div>
@@ -192,13 +192,15 @@ function openAddFuelModal(state, onSaved) {
     const btn = document.getElementById('modal-submit')
     btn.textContent = 'Saving…'
     btn.disabled = true
+    const liters = parseFloat(fd.get('liters'))
+    const cost   = parseFloat(fd.get('total_cost'))
     try {
       await addFuelLog(state.activeCar.id, {
         date:           fd.get('date'),
         odometer_km:    parseFloat(fd.get('odometer_km')),
-        liters:         parseFloat(fd.get('liters')),
-        total_cost:     parseFloat(fd.get('total_cost')),
-        price_per_liter: parseFloat(fd.get('total_cost')) / parseFloat(fd.get('liters')),
+        liters,
+        total_cost:     cost,
+        price_per_liter: liters > 0 ? cost / liters : null,
         is_full_tank:   fd.get('is_full_tank') === 'on',
         notes:          fd.get('notes') || null,
         currency:       'EUR',

@@ -20,6 +20,14 @@ function addMonths(dateStr, months) {
   return d
 }
 
+// Escape user-provided strings before embedding in innerHTML.
+// Guards against XSS via notes/description/etc. stored in the DB.
+export function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    c === '&' ? '&amp;' : c === '<' ? '&lt;' : c === '>' ? '&gt;' : c === '"' ? '&quot;' : '&#39;'
+  )
+}
+
 // ─── Cars ───────────────────────────────────────────────────────────────────
 
 export async function getCars() {
@@ -58,7 +66,8 @@ export async function getFuelLogs(carId) {
       ? round(row.liters / distance * 100, 1) : null
     const eurKm    = (distance && distance > 0)
       ? round(row.total_cost / distance, 3) : null
-    const ppl      = row.price_per_liter ?? round(row.total_cost / row.liters, 3)
+    const ppl      = row.price_per_liter
+      ?? (row.liters > 0 ? round(row.total_cost / row.liters, 3) : null)
 
     return {
       ...row,
@@ -210,9 +219,9 @@ export function computeScheduleStatus(item, currentOdometer) {
   let worst = 'ok'
   let nextKm = null, nextDate = null, daysUntil = null, kmRemaining = null
 
-  if (item.interval_km && item.last_done_km != null) {
+  if (item.interval_km && item.last_done_km != null && currentOdometer != null) {
     nextKm      = item.last_done_km + item.interval_km
-    kmRemaining = nextKm - (currentOdometer || 0)
+    kmRemaining = nextKm - currentOdometer
     if (kmRemaining < 0)    worst = 'overdue'
     else if (kmRemaining < 1500 && worst !== 'overdue') worst = 'due_soon'
   }

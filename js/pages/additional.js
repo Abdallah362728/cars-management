@@ -1,4 +1,4 @@
-import { getSchedule, updateScheduleItem, getMaintenanceLogs, addCost, computeScheduleStatus, getCars } from '../api.js'
+import { getSchedule, updateScheduleItem, getMaintenanceLogs, addCost, computeScheduleStatus, getCars, esc } from '../api.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
@@ -54,7 +54,7 @@ async function renderSchedule(container, state) {
     `
   }
 
-  schedEl.innerHTML += `<span class="section-label">Service Schedule — ${state.activeCar.make} ${state.activeCar.model}</span>`
+  schedEl.innerHTML += `<span class="section-label">Service Schedule — ${esc(state.activeCar.make)} ${esc(state.activeCar.model)}</span>`
 
   // Sort: overdue → due_soon → ok → never_done
   const ORDER = { overdue: 0, due_soon: 1, ok: 2, never_done: 3 }
@@ -86,8 +86,8 @@ async function renderSchedule(container, state) {
     row.innerHTML = `
       <div class="w-2 h-2 rounded-full ${colors.dot} flex-shrink-0"></div>
       <div class="flex-1 min-w-0">
-        <p class="text-white text-sm font-semibold">${item.item_name}</p>
-        <p class="text-slate-500 text-xs truncate">${subtitle}</p>
+        <p class="text-white text-sm font-semibold">${esc(item.item_name)}</p>
+        <p class="text-slate-500 text-xs truncate">${esc(subtitle)}</p>
         ${nextInfo ? `<p class="text-slate-400 text-xs">${nextInfo}</p>` : ''}
       </div>
       <span class="pill ${colors.pill} flex-shrink-0">${computed.label}</span>
@@ -103,7 +103,7 @@ function openMarkDoneModal(item, state, onSaved) {
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
-    <h2 class="text-white text-lg font-bold mb-1">${item.item_name}</h2>
+    <h2 class="text-white text-lg font-bold mb-1">${esc(item.item_name)}</h2>
     <p class="text-slate-500 text-sm mb-5">Mark as done — enter when it was completed</p>
     <form id="done-form" class="space-y-4">
       <div>
@@ -195,8 +195,8 @@ async function renderCarHistory(container, state) {
       <div class="card mb-2 opacity-70">
         <div class="flex justify-between items-start mb-2">
           <div>
-            <p class="text-white font-bold text-sm">${car.make} ${car.model} ${car.year}</p>
-            <p class="text-slate-500 text-xs">${car.purchase_date ?? '?'} – ${car.sell_date ?? '?'} · ${car.operating_country ?? ''}</p>
+            <p class="text-white font-bold text-sm">${esc(car.make)} ${esc(car.model)} ${car.year}</p>
+            <p class="text-slate-500 text-xs">${esc(car.purchase_date ?? '?')} – ${esc(car.sell_date ?? '?')} · ${esc(car.operating_country ?? '')}</p>
           </div>
           <span class="pill pill-blue">Sold</span>
         </div>
