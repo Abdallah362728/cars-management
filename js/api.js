@@ -47,6 +47,58 @@ export async function updateCar(id, updates) {
 
 // ─── Fuel Logs ──────────────────────────────────────────────────────────────
 
+// Enrich raw fuel rows (ascending by date) with derived metrics.
+//
+// Fuel efficiency only makes sense tank-to-tank between FULL fills. A partial
+// fill (is_full_tank = false) doesn't reset the gauge, so its own liters-over-
+// distance is meaningless. Instead we accumulate liters & cost since the last
+// full tank and only compute L/100km (and €/km) when we hit the next full tank,
+// dividing the accumulated fuel by the distance back to the previous full tank.
+// This mirrors the "Full Tank?" reset logic in the Excel sheet.
+export function enrichFuel(rows) {
+  let lastFullIdx = null      // index of the previous full-tank fill (baseline)
+  let litersSinceFull = 0
+  let costSinceFull   = 0
+
+  return rows.map((row, i) => {
+    const prev     = i > 0 ? rows[i - 1] : null
+    const distance = prev ? row.odometer_km - prev.odometer_km : null   // this leg only
+    const days     = prev ? daysBetween(prev.date, row.date) : null
+    const isFull   = row.is_full_tank !== false                          // default = full
+
+    // Roll this fill into the open measurement period.
+    litersSinceFull += Number(row.liters)     || 0
+    costSinceFull   += Number(row.total_cost) || 0
+
+    // Efficiency is only resolved at a full tank, over the whole period.
+    let l100 = null, eurKm = null
+    if (isFull && lastFullIdx !== null) {
+      const periodDist = row.odometer_km - rows[lastFullIdx].odometer_km
+      if (periodDist > 0) {
+        l100  = round(litersSinceFull / periodDist * 100, 1)
+        eurKm = round(costSinceFull   / periodDist, 3)
+      }
+    }
+    // A full tank closes the period and becomes the next baseline.
+    if (isFull) { lastFullIdx = i; litersSinceFull = 0; costSinceFull = 0 }
+
+    const ppl = row.price_per_liter
+      ?? (row.liters > 0 ? round(row.total_cost / row.liters, 3) : null)
+
+    return {
+      ...row,
+      is_full_tank:     isFull,
+      price_per_liter:  ppl,
+      distance_km:      distance,
+      days_since_last:  days,
+      l_per_100km:      l100,
+      eur_per_km:       eurKm,
+      daily_km:         (distance && days && days > 0) ? round(distance / days, 1) : null,
+      daily_cost:       (days && days > 0) ? round(row.total_cost / days, 2) : null,
+    }
+  })
+}
+
 export async function getFuelLogs(carId) {
   const { data, error } = await supabase
     .from('fuel_logs')
@@ -57,31 +109,7 @@ export async function getFuelLogs(carId) {
   if (error) throw error
   if (!data || data.length === 0) return []
 
-  // Compute derived metrics from raw values (no stored computed columns)
-  const enriched = data.map((row, i) => {
-    const prev     = i > 0 ? data[i - 1] : null
-    const distance = prev ? row.odometer_km - prev.odometer_km : null
-    const days     = prev ? daysBetween(prev.date, row.date) : null
-    const l100     = (distance && distance > 0)
-      ? round(row.liters / distance * 100, 1) : null
-    const eurKm    = (distance && distance > 0)
-      ? round(row.total_cost / distance, 3) : null
-    const ppl      = row.price_per_liter
-      ?? (row.liters > 0 ? round(row.total_cost / row.liters, 3) : null)
-
-    return {
-      ...row,
-      price_per_liter:  ppl,
-      distance_km:      distance,
-      days_since_last:  days,
-      l_per_100km:      l100,
-      eur_per_km:       eurKm,
-      daily_km:         (distance && days && days > 0) ? round(distance / days, 1) : null,
-      daily_cost:       (days && days > 0) ? round(row.total_cost / days, 2) : null,
-    }
-  })
-
-  return enriched.reverse()   // newest first for display
+  return enrichFuel(data).reverse()   // newest first for display
 }
 
 export async function addFuelLog(carId, payload) {
@@ -125,14 +153,8 @@ export async function getDashboard(car) {
   const totalIns   = round(sum(ins,   'cost'))
   const totalOther = round(sum(other, 'cost') + sum(regs, 'cost'))
 
-  // Enrich fuel with L/100km
-  const enriched = (fuel || []).map((row, i, arr) => {
-    const prev     = arr[i - 1]
-    const distance = prev ? row.odometer_km - prev.odometer_km : null
-    const l100     = (distance && distance > 0)
-      ? round(row.liters / distance * 100, 1) : null
-    return { ...row, l_per_100km: l100, distance_km: distance }
-  })
+  // Enrich fuel with L/100km using the full-tank reset method (see enrichFuel).
+  const enriched = enrichFuel(fuel || [])
 
   const efficiencies   = enriched.filter(f => f.l_per_100km !== null).map(f => f.l_per_100km)
   const avgL100km      = efficiencies.length

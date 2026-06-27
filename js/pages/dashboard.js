@@ -1,6 +1,6 @@
 import { getDashboard, addFuelLog } from '../api.js'
 import { renderCarHeader } from '../app.js'
-import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
+import { openModal, closeModal, modalHandle, modalFooter, tankToggleField, setupTankToggle } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
 let charts = []
@@ -276,13 +276,7 @@ function openAddFuelModal(state, onSaved) {
           <input type="number" name="total_cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off">
         </div>
       </div>
-      <div>
-        <input type="hidden" name="is_full_tank" id="full-tank-input" value="on">
-        <button type="button" id="full-tank-btn"
-          class="w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50">
-          Full Tank
-        </button>
-      </div>
+      ${tankToggleField()}
       <div>
         <label class="section-label">Notes (optional)</label>
         <input type="text" name="notes" placeholder="e.g. Highway fill-up" autocomplete="off">
@@ -291,15 +285,7 @@ function openAddFuelModal(state, onSaved) {
     </form>
   `)
 
-  const fullTankBtn   = document.getElementById('full-tank-btn')
-  const fullTankInput = document.getElementById('full-tank-input')
-  fullTankBtn.addEventListener('click', () => {
-    const active = fullTankInput.value === 'on'
-    fullTankInput.value = active ? 'off' : 'on'
-    fullTankBtn.className = !active
-      ? 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50'
-      : 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-slate-700/50 text-slate-500 border border-slate-600/40'
-  })
+  setupTankToggle()
 
   document.getElementById('fuel-form').addEventListener('submit', async e => {
     e.preventDefault()

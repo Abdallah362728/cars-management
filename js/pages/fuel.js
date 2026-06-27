@@ -1,6 +1,6 @@
 import { getFuelLogs, addFuelLog, deleteFuelLog, esc } from '../api.js'
 import { renderCarHeader } from '../app.js'
-import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
+import { openModal, closeModal, modalHandle, modalFooter, tankToggleField, setupTankToggle } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
 export async function render(container, state) {
@@ -79,10 +79,14 @@ export async function render(container, state) {
       section.innerHTML = `<span class="section-label">${label}</span>`
 
       entries.forEach(log => {
-        const colorClass = log.l_per_100km == null ? 'text-slate-400'
-          : log.l_per_100km > (state.activeCar.factory_fuel_spec ?? 999) + 1 ? 'text-red-400' : 'text-green-400'
-        const pillClass = log.l_per_100km == null ? 'pill-blue'
-          : log.l_per_100km > (state.activeCar.factory_fuel_spec ?? 999) + 1 ? 'pill-red' : 'pill-green'
+        const isPartial = log.is_full_tank === false
+        const hasEff    = log.l_per_100km != null
+        const overSpec  = hasEff && log.l_per_100km > (state.activeCar.factory_fuel_spec ?? 999) + 1
+
+        const colorClass = !hasEff ? 'text-slate-400' : overSpec ? 'text-red-400' : 'text-green-400'
+        const pillClass  = isPartial || !hasEff ? 'pill-blue' : overSpec ? 'pill-red' : 'pill-green'
+        const pillText   = isPartial ? '🪣 Partial fill'
+          : hasEff ? log.l_per_100km + ' L/100km' : 'Baseline'
 
         const card = document.createElement('div')
         card.className = 'card mb-2'
@@ -92,7 +96,7 @@ export async function render(container, state) {
               <p class="text-white font-bold text-sm">${log.date}</p>
               <p class="text-slate-500 text-xs">Odometer: ${log.odometer_km.toLocaleString()} km</p>
             </div>
-            <span class="pill ${pillClass}">${log.l_per_100km != null ? log.l_per_100km + ' L/100km' : 'No calc'}</span>
+            <span class="pill ${pillClass}">${pillText}</span>
           </div>
           <div class="grid grid-cols-3 gap-2 pt-2 border-t border-slate-700/60">
             <div><p class="text-slate-500 text-[10px] uppercase">Liters</p><p class="text-white text-sm font-semibold">${log.liters} L</p></div>
@@ -159,13 +163,7 @@ function openAddFuelModal(state, onSaved) {
           <input type="number" name="total_cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off">
         </div>
       </div>
-      <div>
-        <input type="hidden" name="is_full_tank" id="full-tank-input" value="on">
-        <button type="button" id="full-tank-btn"
-          class="w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50">
-          Full Tank
-        </button>
-      </div>
+      ${tankToggleField()}
       <div>
         <label class="section-label">Notes (optional)</label>
         <input type="text" name="notes" placeholder="e.g. Highway fill-up" autocomplete="off">
@@ -174,17 +172,7 @@ function openAddFuelModal(state, onSaved) {
     </form>
   `)
 
-  const fullTankBtn   = document.getElementById('full-tank-btn')
-  const fullTankInput = document.getElementById('full-tank-input')
-  fullTankBtn.addEventListener('click', () => {
-    const active = fullTankInput.value === 'on'
-    fullTankInput.value = active ? 'off' : 'on'
-    if (!active) {
-      fullTankBtn.className = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50'
-    } else {
-      fullTankBtn.className = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-slate-700/50 text-slate-500 border border-slate-600/40'
-    }
-  })
+  setupTankToggle()
 
   document.getElementById('fuel-form').addEventListener('submit', async e => {
     e.preventDefault()

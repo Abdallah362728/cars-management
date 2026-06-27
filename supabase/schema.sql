@@ -31,7 +31,9 @@ create table if not exists fuel_logs (
   liters numeric not null,
   total_cost numeric not null,
   price_per_liter numeric,
-  is_full_tank boolean default true,
+  -- true  = tank filled to full (closes a measurement period; L/100km is computed)
+  -- false = partial fill (recorded, but fuel is rolled into the next full tank)
+  is_full_tank boolean not null default true,
   currency text default 'EUR',
   notes text,
   created_at timestamptz default now()
@@ -118,6 +120,13 @@ create table if not exists other_costs (
 );
 
 -- ============================================================
+-- Migrations — safe to re-run on an existing database
+-- ============================================================
+
+-- Ensure the full-tank flag exists on databases created before it was added.
+alter table fuel_logs add column if not exists is_full_tank boolean not null default true;
+
+-- ============================================================
 -- Seed data — existing cars from Excel files
 -- ============================================================
 
@@ -130,10 +139,21 @@ values
 update cars set sell_date = '2026-03-01', sell_price = 100  where model = 'Pixo';
 update cars set sell_date = '2024-09-01', sell_price = 6500 where model = 'Corolla';
 
--- Mercedes fuel entry (from Cars_v2.xlsx)
-insert into fuel_logs (car_id, date, odometer_km, liters, total_cost, price_per_liter, currency)
-select id, '2026-03-14', 178917, 25.96, 54.02, 2.082, 'EUR'
-from cars where model = 'A150';
+-- Mercedes A150 fuel history (from Cars.xlsx "Germany" sheet).
+-- Full-tank fills close a measurement period and get an L/100km; partial fills
+-- (is_full_tank = false) are recorded but roll into the next full tank.
+-- 30.05 & 22.06 odometers and the 13.06 liters/price are estimated (see notes).
+insert into fuel_logs (car_id, date, odometer_km, liters, total_cost, price_per_liter, is_full_tank, notes, currency)
+select c.id, f.d::date, f.odo, f.lit, f.cost, f.ppl, f.ft, f.note, 'EUR'
+from cars c
+cross join (values
+  ('2026-03-04', 178697, 52.19, 108.56, 2.080, true,  'Initial top-up (start)'),
+  ('2026-03-27', 179288, 48.64, 102.58, 2.109, true,  null),
+  ('2026-05-30', 179939, 16.59,  30.00, 1.808, false, 'Partial fill; odometer estimated'),
+  ('2026-06-13', 180081, 20.46,  38.00, 1.857, false, 'Liters & price estimated from EUR 38; partial fill'),
+  ('2026-06-22', 180173, 47.66,  90.00, 1.888, true,  'Near-full fill; odometer estimated')
+) as f(d, odo, lit, cost, ppl, ft, note)
+where c.model = 'A150';
 
 -- Mercedes maintenance schedule (10 items, all last_done = null = "never done")
 insert into maintenance_schedules (car_id, item_name, interval_km, interval_months)
