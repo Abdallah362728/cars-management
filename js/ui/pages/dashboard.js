@@ -1,18 +1,48 @@
-import { getDashboard, addFuelLog } from '../api.js'
-import { renderCarHeader } from '../app.js'
+import { getFuelLogsRaw, addFuelLog } from '../../data/fuel-repo.js'
+import { getCostTotals } from '../../data/costs-repo.js'
+import {
+  normalizeFuelRows, enrichFuelLogs, computeFuelStats,
+  monthlySpend, efficiencyTrend, daysSince,
+} from '../../domain/fuel-metrics.js'
+import { round, fmtMoney, fmtNum } from '../../domain/format.js'
+import { isStale, route } from '../../core/router.js'
+import { renderCarHeader } from '../components/car-header.js'
+import { createChartManager } from '../components/charts.js'
 import { openModal, closeModal, modalHandle, modalFooter, tankToggleField, setupTankToggle } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
-let charts = []
+const charts = createChartManager()
 
 export function cleanup() {
-  charts.forEach(c => c.destroy())
-  charts = []
+  charts.destroyAll()
 }
 
-export async function render(container, state) {
-  // Destroy any charts from a previous render on this page (car-switch, etc.)
-  // to avoid leaking Chart.js instances attached to now-removed canvases.
+// Compose repos + domain into everything the dashboard shows.
+async function loadDashboardData(car) {
+  const [fuelRaw, costTotals] = await Promise.all([
+    getFuelLogsRaw(car.id),
+    getCostTotals(car.id),
+  ])
+
+  const enriched = enrichFuelLogs(normalizeFuelRows(fuelRaw))
+  const stats = computeFuelStats(enriched)
+
+  const costsTotal = Object.values(costTotals).reduce((s, v) => s + v, 0)
+  const thisMonthKey = new Date().toISOString().slice(0, 7)
+
+  return {
+    stats,
+    trend: efficiencyTrend(enriched),
+    monthly: monthlySpend(enriched),
+    thisMonthFuel: round(enriched
+      .filter(f => String(f.date ?? '').startsWith(thisMonthKey))
+      .reduce((s, f) => s + f.total_cost, 0)),
+    totalCoo: round((Number(car.purchase_price) || 0) + stats.totalCost + costsTotal),
+    daysSinceFuel: daysSince(stats.lastDate),
+  }
+}
+
+export async function render(container, state, epoch) {
   cleanup()
 
   if (!state.activeCar) {
@@ -23,10 +53,8 @@ export async function render(container, state) {
   container.innerHTML = ''
   renderCarHeader(container, {
     subtitle: `${state.activeCar.year} · ${state.activeCar.operating_country || ''}`,
-    onSwitch: () => render(container, state),
   })
 
-  // Skeleton cards while loading
   const grid = document.createElement('div')
   grid.innerHTML = `
     <div class="px-4 grid grid-cols-2 gap-3 mb-3">
@@ -39,44 +67,47 @@ export async function render(container, state) {
 
   let data
   try {
-    data = await getDashboard(state.activeCar)
+    data = await loadDashboardData(state.activeCar)
   } catch (err) {
-    showToast('Failed to load dashboard', 'error')
+    if (!isStale(epoch)) showToast('Failed to load dashboard', 'error')
     return
   }
+  if (isStale(epoch)) return
 
-  // Re-render with real data
   grid.innerHTML = ''
 
-  // ── KPI Cards ──────────────────────────────────────────────────────────────
-  const fuelColor = data.avgL100km == null ? 'text-slate-400'
-    : data.avgL100km > (state.activeCar.factory_fuel_spec ?? 999) + 1 ? 'text-red-400' : 'text-green-400'
-  const vsFactory = (data.avgL100km != null && state.activeCar.factory_fuel_spec)
-    ? (data.avgL100km - state.activeCar.factory_fuel_spec).toFixed(1) : null
+  const { stats } = data
+  const spec = Number(state.activeCar.factory_fuel_spec) || null
+  const avgL100 = stats.blendedAvgL100 ?? stats.measuredAvgL100
+  const fuelColor = avgL100 == null ? 'text-slate-400'
+    : avgL100 > (spec ?? 999) + 1 ? 'text-red-400' : 'text-green-400'
+  const vsFactory = (avgL100 != null && spec) ? round(avgL100 - spec, 1) : null
 
   grid.innerHTML += `
     <div class="px-4 grid grid-cols-2 gap-3 mb-3">
       <div class="card">
         <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Avg Fuel Use</p>
         <div class="flex items-baseline gap-1 mb-1">
-          <span class="${fuelColor} text-2xl font-bold">${data.avgL100km ?? '—'}</span>
+          <span class="${fuelColor} text-2xl font-bold">${fmtNum(avgL100)}</span>
           <span class="text-slate-500 text-xs">L/100km</span>
         </div>
-        ${vsFactory != null ? `<span class="pill ${parseFloat(vsFactory) > 0 ? 'pill-red' : 'pill-green'}">${parseFloat(vsFactory) > 0 ? '↑' : '↓'} ${Math.abs(vsFactory)} vs factory</span>` : `<span class="text-slate-600 text-xs">Factory: ${state.activeCar.factory_fuel_spec ?? '—'}</span>`}
+        ${vsFactory != null
+          ? `<span class="pill ${vsFactory > 0 ? 'pill-red' : 'pill-green'}">${vsFactory > 0 ? '↑' : '↓'} ${Math.abs(vsFactory)} vs factory</span>`
+          : `<span class="text-slate-600 text-xs">Factory: ${spec ?? '—'}</span>`}
       </div>
       <div class="card">
         <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">This Month</p>
         <div class="flex items-baseline gap-1 mb-1">
-          <span class="text-white text-2xl font-bold">€${data.thisMonthFuel}</span>
+          <span class="text-white text-2xl font-bold">${fmtMoney(data.thisMonthFuel, { decimals: 0 })}</span>
         </div>
-        <span class="text-slate-500 text-xs">Total owned: €${data.totalCoo}</span>
+        <span class="text-slate-500 text-xs">Total owned: ${fmtMoney(data.totalCoo, { decimals: 0 })}</span>
       </div>
       <div class="card">
-        <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Cost / km</p>
+        <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Fuel Cost / 100km</p>
         <div class="flex items-baseline gap-1 mb-1">
-          <span class="text-white text-2xl font-bold">${data.costPerKm ? '€' + data.costPerKm : '—'}</span>
+          <span class="text-white text-2xl font-bold">${fmtMoney(stats.blendedEurPer100km)}</span>
         </div>
-        <span class="text-slate-500 text-xs">${data.totalKm ? data.totalKm + ' km driven' : 'No data yet'}</span>
+        <span class="text-slate-500 text-xs">${stats.totalKm ? `${fmtMoney(stats.costPerKm, { decimals: 3 })}/km · ${stats.totalKm.toLocaleString()} km` : 'No data yet'}</span>
       </div>
       <div class="card">
         <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Last Fill-up</p>
@@ -85,12 +116,12 @@ export async function render(container, state) {
             ? `<span class="text-white text-2xl font-bold">${data.daysSinceFuel}</span><span class="text-slate-500 text-xs">days ago</span>`
             : `<span class="text-slate-400 text-xl font-bold">—</span>`}
         </div>
-        <span class="text-slate-500 text-xs">${data.lastFuel ? data.lastFuel.date : 'No fill-ups yet'}</span>
+        <span class="text-slate-500 text-xs">${stats.lastFuel ? stats.lastFuel.date : 'No fill-ups yet'}</span>
       </div>
     </div>
   `
 
-  // ── Fuel Efficiency Trend Chart ────────────────────────────────────────────
+  const hasEstimates = data.trend.some(t => t.isEstimate)
   grid.innerHTML += `
     <div class="px-4 mb-3">
       <div class="card">
@@ -101,16 +132,22 @@ export async function render(container, state) {
         <div style="position:relative;height:110px">
           <canvas id="trend-chart"></canvas>
         </div>
-        ${state.activeCar.factory_fuel_spec ? `
-          <div class="flex items-center gap-2 mt-2">
-            <svg width="18" height="6" viewBox="0 0 18 6"><line x1="0" y1="3" x2="18" y2="3" stroke="rgba(248,113,113,0.7)" stroke-width="1.5" stroke-dasharray="5,4"/></svg>
-            <span class="text-red-400 text-[10px]">Factory: ${state.activeCar.factory_fuel_spec} L/100km</span>
-          </div>` : ''}
+        <div class="flex items-center gap-3 mt-2 flex-wrap">
+          ${spec ? `
+            <span class="flex items-center gap-1.5">
+              <svg width="18" height="6" viewBox="0 0 18 6"><line x1="0" y1="3" x2="18" y2="3" stroke="rgba(248,113,113,0.7)" stroke-width="1.5" stroke-dasharray="5,4"/></svg>
+              <span class="text-red-400 text-[10px]">Factory: ${spec} L/100km</span>
+            </span>` : ''}
+          ${hasEstimates ? `
+            <span class="flex items-center gap-1.5">
+              <svg width="10" height="10" viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="2,1.5"/></svg>
+              <span class="text-amber-400 text-[10px]">Hollow = estimated (partial fill)</span>
+            </span>` : ''}
+        </div>
       </div>
     </div>
   `
 
-  // ── Monthly Spend Chart ────────────────────────────────────────────────────
   grid.innerHTML += `
     <div class="px-4 mb-3">
       <div class="card">
@@ -125,10 +162,9 @@ export async function render(container, state) {
     </div>
   `
 
-  // ── Latest fill-up card ────────────────────────────────────────────────────
-  if (data.lastFuel) {
-    const ppl = data.lastFuel.price_per_liter
-      ?? (data.lastFuel.total_cost / data.lastFuel.liters).toFixed(3)
+  if (stats.lastFuel) {
+    const last = stats.lastFuel
+    const lastPoint = data.trend[data.trend.length - 1]
     grid.innerHTML += `
       <div class="px-4 mb-4">
         <span class="section-label">Latest Fill-up</span>
@@ -139,13 +175,13 @@ export async function render(container, state) {
             </svg>
           </div>
           <div class="flex-1">
-            <p class="text-white font-semibold text-sm">${data.lastFuel.liters} L &nbsp;·&nbsp; €${data.lastFuel.total_cost}</p>
-            <p class="text-slate-500 text-xs">€${parseFloat(ppl).toFixed(3)}/L &nbsp;·&nbsp; ${data.lastFuel.date}</p>
+            <p class="text-white font-semibold text-sm">${fmtNum(last.liters, 2)} L &nbsp;·&nbsp; ${fmtMoney(last.total_cost)}</p>
+            <p class="text-slate-500 text-xs">${fmtMoney(last.price_per_liter, { decimals: 3 })}/L &nbsp;·&nbsp; ${last.date}</p>
           </div>
           <div class="text-right">
-            ${data.trend.length > 0
-              ? `<p class="${fuelColor} font-bold text-lg">${data.trend[data.trend.length-1]?.value ?? '—'}</p>
-                 <p class="text-slate-500 text-[10px]">L/100km</p>`
+            ${lastPoint
+              ? `<p class="${fuelColor} font-bold text-lg">${lastPoint.isEstimate ? '~' : ''}${fmtNum(lastPoint.value)}</p>
+                 <p class="text-slate-500 text-[10px]">${lastPoint.isEstimate ? 'L/100km est.' : 'L/100km'}</p>`
               : '<p class="text-slate-500 text-sm">—</p>'}
           </div>
         </div>
@@ -161,20 +197,25 @@ export async function render(container, state) {
 
   container.appendChild(grid)
 
-  // ── Draw charts ────────────────────────────────────────────────────────────
+  drawCharts(data, spec)
+
+  window.__openAddModal = () => openAddFuelModal(state, route)
+}
+
+function drawCharts(data, factorySpec) {
   Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, sans-serif'
   Chart.defaults.color = '#64748b'
 
   const trendCanvas = document.getElementById('trend-chart')
   if (trendCanvas && data.trend.length > 0) {
-    const factorySpec = parseFloat(state.activeCar.factory_fuel_spec)
+    const spec = Number(factorySpec)
 
     const factoryLinePlugin = {
       id: 'factoryLine',
       afterDraw(chart) {
-        if (isNaN(factorySpec)) return
+        if (!spec) return
         const { ctx, chartArea, scales } = chart
-        const y = scales.y.getPixelForValue(factorySpec)
+        const y = scales.y.getPixelForValue(spec)
         if (y < chartArea.top || y > chartArea.bottom) return
         ctx.save()
         ctx.strokeStyle = 'rgba(248,113,113,0.85)'
@@ -188,7 +229,7 @@ export async function render(container, state) {
       },
     }
 
-    charts.push(new Chart(trendCanvas, {
+    charts.add(new Chart(trendCanvas, {
       type: 'line',
       data: {
         labels: data.trend.map(t => t.label),
@@ -198,24 +239,34 @@ export async function render(container, state) {
           backgroundColor: 'rgba(96,165,250,0.08)',
           borderWidth: 2.5,
           pointRadius: 4,
-          pointBackgroundColor: '#60a5fa',
-          pointBorderColor: '#0f172a',
+          // Estimated points render hollow; measured points solid.
+          pointBackgroundColor: data.trend.map(t => t.isEstimate ? '#0f172a' : '#60a5fa'),
+          pointBorderColor: data.trend.map(t => t.isEstimate ? '#fbbf24' : '#0f172a'),
           pointBorderWidth: 2,
           fill: true,
           tension: 0.4,
+          segment: {
+            borderDash: ctx => (data.trend[ctx.p1DataIndex]?.isEstimate || data.trend[ctx.p0DataIndex]?.isEstimate) ? [5, 4] : undefined,
+          },
         }],
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, tooltip: { backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1, callbacks: { label: c => ` ${c.parsed.y} L/100km` } } },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0f172a', borderColor: '#334155', borderWidth: 1,
+            callbacks: { label: c => ` ${c.parsed.y} L/100km${data.trend[c.dataIndex]?.isEstimate ? ' (estimated)' : ''}` },
+          },
+        },
         scales: {
           x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { font: { size: 10 } } },
           y: {
             grid: { color: 'rgba(255,255,255,0.03)' },
             ticks: { font: { size: 10 }, callback: v => v + 'L' },
-            ...(!isNaN(factorySpec) && {
-              min: Math.min(...data.trend.map(t => t.value), factorySpec) * 0.95,
-              max: Math.max(...data.trend.map(t => t.value), factorySpec) * 1.05,
+            ...(spec && {
+              min: round(Math.min(...data.trend.map(t => t.value), spec) * 0.95, 1),
+              max: round(Math.max(...data.trend.map(t => t.value), spec) * 1.05, 1),
             }),
           },
         },
@@ -226,7 +277,7 @@ export async function render(container, state) {
 
   const monthCanvas = document.getElementById('monthly-chart')
   if (monthCanvas) {
-    charts.push(new Chart(monthCanvas, {
+    charts.add(new Chart(monthCanvas, {
       type: 'bar',
       data: {
         labels: data.monthly.map(m => m.label),
@@ -247,12 +298,9 @@ export async function render(container, state) {
       },
     }))
   }
-
-  // ── FAB → Add Fill-up ─────────────────────────────────────────────────────
-  window.__openAddModal = () => openAddFuelModal(state, () => render(container, state))
 }
 
-function openAddFuelModal(state, onSaved) {
+export function openAddFuelModal(state, onSaved) {
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
@@ -295,17 +343,17 @@ function openAddFuelModal(state, onSaved) {
     btn.disabled = true
 
     const liters = parseFloat(fd.get('liters'))
-    const cost   = parseFloat(fd.get('total_cost'))
+    const cost = parseFloat(fd.get('total_cost'))
     try {
       await addFuelLog(state.activeCar.id, {
-        date:         fd.get('date'),
-        odometer_km:  parseFloat(fd.get('odometer_km')),
+        date: fd.get('date'),
+        odometer_km: parseFloat(fd.get('odometer_km')),
         liters,
-        total_cost:   cost,
+        total_cost: cost,
         price_per_liter: liters > 0 ? cost / liters : null,
         is_full_tank: fd.get('is_full_tank') === 'on',
-        notes:        fd.get('notes') || null,
-        currency:     'EUR',
+        notes: fd.get('notes') || null,
+        currency: 'EUR',
       })
       closeModal()
       showToast('Fill-up saved!')

@@ -1,5 +1,5 @@
 const modal = () => document.getElementById('modal')
-const body  = () => document.getElementById('modal-body')
+const body = () => document.getElementById('modal-body')
 
 export function initModal() {
   window.__closeModal = closeModal
@@ -47,20 +47,20 @@ export function tankToggleField() {
 
 export function setupTankToggle() {
   const input = document.getElementById('full-tank-input')
-  const full  = document.getElementById('tank-full-btn')
-  const part  = document.getElementById('tank-partial-btn')
-  const hint  = document.getElementById('tank-hint')
+  const full = document.getElementById('tank-full-btn')
+  const part = document.getElementById('tank-partial-btn')
+  const hint = document.getElementById('tank-hint')
   if (!input || !full || !part) return
 
-  const on  = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50'
+  const on = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-blue-500/20 text-blue-400 border border-blue-500/50'
   const off = 'w-full py-2.5 rounded-xl text-sm font-semibold transition-all bg-slate-700/50 text-slate-500 border border-slate-600/40'
   const set = isFull => {
-    input.value    = isFull ? 'on' : 'off'
-    full.className  = isFull ? on : off
-    part.className  = isFull ? off : on
+    input.value = isFull ? 'on' : 'off'
+    full.className = isFull ? on : off
+    part.className = isFull ? off : on
     hint.textContent = isFull
       ? 'Filled all the way up — used to calculate L/100km.'
-      : 'Partial fill — saved, but L/100km waits until your next full tank.'
+      : 'Partial fill — counted in cost stats now, exact L/100km at your next full tank.'
   }
   full.addEventListener('click', () => set(true))
   part.addEventListener('click', () => set(false))

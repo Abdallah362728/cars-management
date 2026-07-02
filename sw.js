@@ -1,4 +1,4 @@
-const CACHE = 'cars-v3'
+const CACHE = 'cars-v4'
 
 self.addEventListener('install', e => {
   self.skipWaiting()

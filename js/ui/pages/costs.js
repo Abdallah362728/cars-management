@@ -1,61 +1,77 @@
-import { getAllCosts, addCost, deleteCost, esc } from '../api.js'
-import { renderCarHeader } from '../app.js'
+import { getAllCosts, addCost, deleteCost } from '../../data/costs-repo.js'
+import { getFuelTotal } from '../../data/fuel-repo.js'
+import { costDate, sumCosts, groupCostsByMonth, totalCostOfOwnership } from '../../domain/costs.js'
+import { esc, fmtMoney } from '../../domain/format.js'
+import { isStale, route } from '../../core/router.js'
+import { renderCarHeader } from '../components/car-header.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
 const TYPE_META = {
-  maintenance:  { label: 'Repair',       emoji: '🔧', color: 'purple' },
-  supplies:     { label: 'Supply',        emoji: '📦', color: 'blue'   },
-  insurance:    { label: 'Insurance',     emoji: '🛡️',  color: 'amber'  },
-  registration: { label: 'Registration',  emoji: '📋', color: 'amber'  },
-  other:        { label: 'Other',         emoji: '📌', color: 'slate'  },
+  maintenance:  { label: 'Repair',       emoji: '🔧' },
+  supplies:     { label: 'Supply',       emoji: '📦' },
+  insurance:    { label: 'Insurance',    emoji: '🛡️' },
+  registration: { label: 'Registration', emoji: '📋' },
+  other:        { label: 'Other',        emoji: '📌' },
 }
 
-let activeFilter = 'all'
+// Filter selection remembered per car — never leaks across cars.
+const filterByCar = new Map()
 
-export async function render(container, state) {
+export async function render(container, state, epoch) {
   if (!state.activeCar) return
+  const carId = state.activeCar.id
+  const activeFilter = filterByCar.get(carId) ?? 'all'
 
   container.innerHTML = ''
-  renderCarHeader(container, { title: 'Costs', onSwitch: () => render(container, state) })
+  renderCarHeader(container, { title: 'Costs' })
 
   const loadingEl = document.createElement('div')
   loadingEl.className = 'px-4 space-y-3'
   loadingEl.innerHTML = Array(3).fill('<div class="skeleton h-20 rounded-2xl"></div>').join('')
   container.appendChild(loadingEl)
 
-  let costs
+  let costs, fuelTotal
   try {
-    costs = await getAllCosts(state.activeCar.id)
+    ;[costs, fuelTotal] = await Promise.all([getAllCosts(carId), getFuelTotal(carId)])
   } catch (err) {
-    showToast('Failed to load costs', 'error')
+    if (!isStale(epoch)) showToast('Failed to load costs', 'error')
     return
   }
+  if (isStale(epoch)) return
   loadingEl.remove()
 
-  // Totals
   const car = state.activeCar
-  const totalFuelCost = 0       // not in costs table, comes from fuel_logs — show separately
-  const totalAll = costs.reduce((s, c) => s + (Number(c.cost) || 0), 0)
-  const totalCoo = (car.purchase_price || 0) + totalAll
+  const totalCoo = totalCostOfOwnership({
+    purchasePrice: car.purchase_price,
+    fuelTotal,
+    costsTotal: sumCosts(costs),
+  })
 
   const summaryEl = document.createElement('div')
   summaryEl.className = 'px-4 mb-3'
   summaryEl.innerHTML = `
     <div class="card mb-3">
       <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Total Cost of Ownership</p>
-      <p class="text-white text-3xl font-black tracking-tight">€${totalCoo.toFixed(2)}</p>
-      <p class="text-slate-500 text-xs mt-1">Since ${car.purchase_date ?? '—'}</p>
+      <p class="text-white text-3xl font-black tracking-tight">${fmtMoney(totalCoo)}</p>
+      <p class="text-slate-500 text-xs mt-1">Purchase + fuel + all costs · since ${car.purchase_date ?? '—'}</p>
     </div>
     <div class="card">
       <div class="grid grid-cols-2 gap-3">
+        <div class="flex items-center gap-2">
+          <span class="text-base">⛽</span>
+          <div class="flex-1 min-w-0">
+            <p class="text-slate-500 text-[10px] uppercase">Fuel</p>
+            <p class="text-white text-sm font-semibold">${fmtMoney(fuelTotal)}</p>
+          </div>
+        </div>
         ${Object.entries(TYPE_META).map(([type, meta]) => {
-          const t = costs.filter(c => c._type === type).reduce((s, c) => s + (Number(c.cost) || 0), 0)
+          const t = sumCosts(costs.filter(c => c._type === type))
           return `<div class="flex items-center gap-2">
             <span class="text-base">${meta.emoji}</span>
             <div class="flex-1 min-w-0">
               <p class="text-slate-500 text-[10px] uppercase">${meta.label}</p>
-              <p class="text-white text-sm font-semibold">€${t.toFixed(2)}</p>
+              <p class="text-white text-sm font-semibold">${fmtMoney(t)}</p>
             </div>
           </div>`
         }).join('')}
@@ -64,7 +80,6 @@ export async function render(container, state) {
   `
   container.appendChild(summaryEl)
 
-  // Filter tabs
   const filterEl = document.createElement('div')
   filterEl.className = 'px-4 mb-3 overflow-x-auto'
   filterEl.innerHTML = `
@@ -79,12 +94,11 @@ export async function render(container, state) {
 
   filterEl.querySelectorAll('.filter-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      activeFilter = btn.dataset.filter
-      render(container, state)
+      filterByCar.set(carId, btn.dataset.filter)
+      route()
     })
   })
 
-  // Entries list
   const listEl = document.createElement('div')
   listEl.className = 'px-4'
 
@@ -93,38 +107,28 @@ export async function render(container, state) {
   if (filtered.length === 0) {
     listEl.innerHTML = `<div class="text-center py-10 text-slate-600 text-sm">No entries yet. Tap + to add one.</div>`
   } else {
-    // Group by month
-    const groups = {}
-    filtered.forEach(c => {
-      const key = (c.date || c.start_date || '').slice(0, 7)
-      if (!groups[key]) groups[key] = []
-      groups[key].push(c)
-    })
-
-    Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0])).forEach(([key, entries]) => {
-      const d = new Date(key + '-01')
+    groupCostsByMonth(filtered).forEach(group => {
+      const d = new Date(group.key + '-01')
       const label = d.toLocaleString('default', { month: 'long', year: 'numeric' })
-      const monthTotal = entries.reduce((s, c) => s + (Number(c.cost) || 0), 0)
 
       listEl.innerHTML += `<div class="flex justify-between items-center mb-2">
         <span class="section-label">${label}</span>
-        <span class="text-slate-500 text-xs">€${monthTotal.toFixed(2)}</span>
+        <span class="text-slate-500 text-xs">${fmtMoney(group.total)}</span>
       </div>`
 
-      entries.forEach(cost => {
+      group.items.forEach(cost => {
         const meta = TYPE_META[cost._type]
-        const label = cost.description || cost.item || cost.category || meta.label
-        const date  = cost.date || cost.start_date || '—'
+        const label = cost.description || cost.item || cost.provider || cost.category || meta.label
 
         listEl.innerHTML += `
           <div class="card flex items-center gap-3 mb-2">
             <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base" style="background:rgba(100,116,139,0.15)">${meta.emoji}</div>
             <div class="flex-1 min-w-0">
               <p class="text-white text-sm font-semibold truncate">${esc(label)}</p>
-              <p class="text-slate-500 text-xs">${esc(date)}</p>
+              <p class="text-slate-500 text-xs">${esc(costDate(cost) || '—')}</p>
             </div>
             <div class="text-right flex-shrink-0">
-              <p class="text-white font-bold">€${Number(cost.cost).toFixed(2)}</p>
+              <p class="text-white font-bold">${fmtMoney(cost.cost)}</p>
               <button data-id="${cost.id}" data-type="${cost._type}" class="delete-cost-btn text-red-400/50 text-[10px] hover:text-red-400">Delete</button>
             </div>
           </div>
@@ -135,22 +139,20 @@ export async function render(container, state) {
 
   container.appendChild(listEl)
 
-  // Delete handlers
   container.querySelectorAll('.delete-cost-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this cost entry?')) return
       try {
         await deleteCost(btn.dataset.type, parseInt(btn.dataset.id))
         showToast('Deleted')
-        render(container, state)
+        route()
       } catch (err) {
         showToast(err.message, 'error')
       }
     })
   })
 
-  // FAB → add cost
-  window.__openAddModal = () => openAddCostModal(state, () => render(container, state))
+  window.__openAddModal = () => openAddCostModal(state, route)
 }
 
 function openAddCostModal(state, onSaved) {
@@ -189,7 +191,6 @@ function openAddCostModal(state, onSaved) {
     </form>
   `)
 
-  // Type switcher
   document.querySelectorAll('.type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.type-btn').forEach(b => {
@@ -198,7 +199,6 @@ function openAddCostModal(state, onSaved) {
       btn.className = btn.className.replace('bg-slate-900 text-slate-400 border-slate-700', 'bg-blue-500 text-white border-transparent')
       document.querySelector('[name="cost_type"]').value = btn.dataset.type
 
-      // Show/hide odometer field (maintenance only)
       const odoField = document.getElementById('odometer-field')
       if (odoField) odoField.style.display = btn.dataset.type === 'maintenance' ? '' : 'none'
     })
@@ -206,20 +206,20 @@ function openAddCostModal(state, onSaved) {
 
   document.getElementById('cost-form').addEventListener('submit', async e => {
     e.preventDefault()
-    const fd   = new FormData(e.target)
+    const fd = new FormData(e.target)
     const type = fd.get('cost_type')
-    const btn  = document.getElementById('modal-submit')
+    const btn = document.getElementById('modal-submit')
     btn.textContent = 'Saving…'
     btn.disabled = true
 
     const payload = {
-      cost:        parseFloat(fd.get('cost')),
-      currency:    'EUR',
-      notes:       fd.get('notes') || null,
+      cost: parseFloat(fd.get('cost')),
+      currency: 'EUR',
+      notes: fd.get('notes') || null,
     }
 
-    // Map field names to table column names
-    // insurance_records uses start_date (no `date` column); all other tables use `date`.
+    // Map field names to table column names.
+    // insurance_records uses start_date (no `date` column); all others use `date`.
     const date = fd.get('date')
     const desc = fd.get('description')
     if (type === 'maintenance')  { payload.date = date; payload.description = desc; const o = fd.get('odometer_km'); if (o) payload.odometer_km = parseFloat(o) }

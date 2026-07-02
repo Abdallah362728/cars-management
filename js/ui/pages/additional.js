@@ -1,11 +1,16 @@
-import { getSchedule, updateScheduleItem, getMaintenanceLogs, addCost, computeScheduleStatus, getCars, esc } from '../api.js'
+import { getSchedule, updateScheduleItem } from '../../data/maintenance-repo.js'
+import { getFuelLogsRaw, } from '../../data/fuel-repo.js'
+import { addCost } from '../../data/costs-repo.js'
+import { getCars } from '../../data/cars-repo.js'
+import { computeScheduleStatus } from '../../domain/schedule.js'
+import { esc } from '../../domain/format.js'
+import { isStale, route } from '../../core/router.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
-export async function render(container, state) {
+export async function render(container, state, epoch) {
   container.innerHTML = ''
 
-  // Header
   const header = document.createElement('div')
   header.className = 'px-5 pt-5 pb-3'
   header.innerHTML = `
@@ -14,16 +19,15 @@ export async function render(container, state) {
   `
   container.appendChild(header)
 
-  // Active car schedule
   if (state.activeCar) {
-    await renderSchedule(container, state)
+    await renderSchedule(container, state, epoch)
+    if (isStale(epoch)) return
   }
 
-  // All cars history (sold cars)
-  await renderCarHistory(container, state)
+  await renderCarHistory(container, epoch)
 }
 
-async function renderSchedule(container, state) {
+async function renderSchedule(container, state, epoch) {
   const loadingEl = document.createElement('div')
   loadingEl.className = 'px-4 space-y-2 mb-4'
   loadingEl.innerHTML = Array(5).fill('<div class="skeleton h-16 rounded-2xl"></div>').join('')
@@ -31,14 +35,18 @@ async function renderSchedule(container, state) {
 
   let schedule, lastOdometer
   try {
-    schedule = await getSchedule(state.activeCar.id)
-    const logs = await import('../api.js').then(m => m.getFuelLogs(state.activeCar.id))
-    lastOdometer = logs[0]?.odometer_km ?? null
+    const [sched, fuel] = await Promise.all([
+      getSchedule(state.activeCar.id),
+      getFuelLogsRaw(state.activeCar.id),
+    ])
+    schedule = sched
+    lastOdometer = fuel.length ? Number(fuel[fuel.length - 1].odometer_km) : null
   } catch (err) {
-    showToast('Failed to load schedule', 'error')
+    if (!isStale(epoch)) showToast('Failed to load schedule', 'error')
     loadingEl.remove()
     return
   }
+  if (isStale(epoch)) return
   loadingEl.remove()
 
   const schedEl = document.createElement('div')
@@ -56,7 +64,6 @@ async function renderSchedule(container, state) {
 
   schedEl.innerHTML += `<span class="section-label">Service Schedule — ${esc(state.activeCar.make)} ${esc(state.activeCar.model)}</span>`
 
-  // Sort: overdue → due_soon → ok → never_done
   const ORDER = { overdue: 0, due_soon: 1, ok: 2, never_done: 3 }
   const withStatus = schedule.map(item => ({
     item,
@@ -92,14 +99,14 @@ async function renderSchedule(container, state) {
       </div>
       <span class="pill ${colors.pill} flex-shrink-0">${computed.label}</span>
     `
-    row.addEventListener('click', () => openMarkDoneModal(item, state, () => render(container, state)))
+    row.addEventListener('click', () => openMarkDoneModal(item, state))
     schedEl.appendChild(row)
   })
 
   container.appendChild(schedEl)
 }
 
-function openMarkDoneModal(item, state, onSaved) {
+function openMarkDoneModal(item, state) {
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
@@ -128,40 +135,37 @@ function openMarkDoneModal(item, state, onSaved) {
 
   document.getElementById('done-form').addEventListener('submit', async e => {
     e.preventDefault()
-    const fd  = new FormData(e.target)
+    const fd = new FormData(e.target)
     const btn = document.getElementById('modal-submit')
     btn.textContent = 'Saving…'
     btn.disabled = true
 
     const doneDate = fd.get('done_date')
-    const doneKm   = fd.get('done_km') ? parseFloat(fd.get('done_km')) : null
-    const cost     = fd.get('cost')    ? parseFloat(fd.get('cost'))    : 0
-    const notes    = fd.get('notes')   || null
+    const doneKm = fd.get('done_km') ? parseFloat(fd.get('done_km')) : null
+    const cost = fd.get('cost') ? parseFloat(fd.get('cost')) : 0
+    const notes = fd.get('notes') || null
 
     try {
-      // Update schedule last_done
       await updateScheduleItem(item.id, {
         last_done_date: doneDate,
-        last_done_km:   doneKm,
+        last_done_km: doneKm,
       })
 
-      // Also save to maintenance_logs if cost > 0
       if (cost > 0) {
-        const { addCost } = await import('../api.js')
         await addCost('maintenance', state.activeCar.id, {
-          date:        doneDate,
+          date: doneDate,
           odometer_km: doneKm,
-          category:    item.item_name,
+          category: item.item_name,
           description: item.item_name,
           cost,
           notes,
-          currency:    'EUR',
+          currency: 'EUR',
         })
       }
 
       closeModal()
       showToast(`${item.item_name} marked as done!`)
-      onSaved()
+      route()
     } catch (err) {
       showToast(err.message, 'error')
       btn.textContent = 'Mark as Done'
@@ -170,14 +174,14 @@ function openMarkDoneModal(item, state, onSaved) {
   })
 }
 
-async function renderCarHistory(container, state) {
+async function renderCarHistory(container, epoch) {
   let allCars
   try {
-    const { getCars } = await import('../api.js')
     allCars = await getCars()
   } catch (err) {
     return
   }
+  if (isStale(epoch)) return
 
   const sold = allCars.filter(c => c.status === 'sold')
   if (sold.length === 0) return

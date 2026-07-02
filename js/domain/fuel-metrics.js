@@ -7,9 +7,11 @@
 //  2. BLENDED €/100km (computeFuelStats) = total spend ÷ total distance, so
 //     partial fills always count toward cost statistics.
 //  3. ESTIMATED values are attached to rows that can't get a measured value
-//     (partials, first full tank after an unknown start), projected from a
-//     rolling window of recent measured periods. They are flagged
-//     `is_estimate` so the UI can render them as estimates, never as facts.
+//     (partials, first full tank after an unknown start) by proportional
+//     projection of the row's own leg: liters ÷ km driven × 100 (and cost ÷
+//     km × 100). Drove 50 km on 3 L → 6 L/100km. They are flagged
+//     `is_estimate` so the UI renders them as estimates, never as facts,
+//     and they never affect distance or monthly-km statistics.
 
 import { round, daysBetween, todayStr } from './format.js'
 
@@ -39,8 +41,7 @@ export function normalizeFuelRows(rows) {
 }
 
 // Input must come from normalizeFuelRows (ascending, numerics coerced).
-export function enrichFuelLogs(rows, { estimateWindow = 3, factorySpec = null } = {}) {
-  const periods = []            // closed measured periods: { closedAt, distKm, liters, cost }
+export function enrichFuelLogs(rows) {
   let baselineIdx = null        // index of the previous full-tank baseline
   let periodLiters = 0
   let periodCost = 0
@@ -77,7 +78,6 @@ export function enrichFuelLogs(rows, { estimateWindow = 3, factorySpec = null } 
         periodKm = dist
         l100 = round(periodLiters / dist * 100, 1)
         eur100 = round(periodCost / dist * 100, 2)
-        periods.push({ closedAt: i, distKm: dist, liters: periodLiters, cost: periodCost })
       }
     }
 
@@ -110,33 +110,18 @@ export function enrichFuelLogs(rows, { estimateWindow = 3, factorySpec = null } 
     }
   })
 
-  // ── Pass 2: estimates for rows without a measured value ──
-  const overallAvg = weightedL100(periods)
-  for (let i = 0; i < out.length; i++) {
-    const row = out[i]
+  // ── Pass 2: proportional projection for rows without a measured value ──
+  // The row's own leg, scaled to 100 km: what went in ÷ what was driven.
+  for (const row of out) {
     if (row.l_per_100km != null) continue
     if (row.distance_km == null || row.distance_km <= 0) continue
 
-    const before = periods.filter(p => p.closedAt < i).slice(-estimateWindow)
-    const basis = weightedL100(before) ?? overallAvg
-      ?? (Number.isFinite(Number(factorySpec)) && Number(factorySpec) > 0 ? Number(factorySpec) : null)
-    if (basis == null) continue
-
-    row.est_l_per_100km = round(basis, 1)
-    row.est_eur_per_100km = row.price_per_liter != null
-      ? round(basis * row.price_per_liter, 2) : null
-    row.is_estimate = true
+    if (row.liters > 0) row.est_l_per_100km = round(row.liters / row.distance_km * 100, 1)
+    if (row.total_cost > 0) row.est_eur_per_100km = round(row.total_cost / row.distance_km * 100, 2)
+    row.is_estimate = row.est_l_per_100km != null || row.est_eur_per_100km != null
   }
 
   return out
-}
-
-// Distance-weighted average consumption over measured periods:
-// Σ liters / Σ km × 100 (NOT a mean of per-period ratios).
-function weightedL100(periods) {
-  const km = periods.reduce((s, p) => s + p.distKm, 0)
-  const liters = periods.reduce((s, p) => s + p.liters, 0)
-  return km > 0 ? liters / km * 100 : null
 }
 
 export function computeFuelStats(enriched) {
@@ -145,16 +130,23 @@ export function computeFuelStats(enriched) {
   const totalLiters = round(rows.reduce((s, r) => s + r.liters, 0), 2)
   const totalCost = round(rows.reduce((s, r) => s + r.total_cost, 0), 2)
 
-  // Distance & cost over tracked legs only (anomalous legs excluded).
+  // Distance & cost/liters over tracked legs only (anomalous legs excluded).
+  // The distance itself is pure odometer math — estimates never touch it.
   const legs = rows.filter(r => r.distance_km != null && r.distance_km > 0)
   const totalKm = legs.reduce((s, r) => s + r.distance_km, 0)
   const costOverLegs = legs.reduce((s, r) => s + r.total_cost, 0)
+  const litersOverLegs = legs.reduce((s, r) => s + r.liters, 0)
 
-  // Measured average: distance-weighted over closed full→full periods.
+  // Measured average: distance-weighted over closed full→full periods only.
   const measured = rows.filter(r => r.l_per_100km != null && r.period_km > 0)
   const periodKm = measured.reduce((s, r) => s + r.period_km, 0)
   const periodLiters = measured.reduce((s, r) => s + r.l_per_100km * r.period_km / 100, 0)
   const measuredAvgL100 = periodKm > 0 ? round(periodLiters / periodKm * 100, 1) : null
+
+  // Blended average consumption: all liters over all tracked km — partial
+  // fills count proportionally (the user's projection method, aggregated).
+  const blendedAvgL100 = (totalKm > 0 && litersOverLegs > 0)
+    ? round(litersOverLegs / totalKm * 100, 1) : null
 
   // Blended cost: every euro after the tracking start counts, partials included.
   const blendedEurPer100km = (totalKm > 0 && costOverLegs > 0)
@@ -169,6 +161,7 @@ export function computeFuelStats(enriched) {
     totalCost,
     totalKm: totalKm > 0 ? totalKm : null,
     measuredAvgL100,
+    blendedAvgL100,
     blendedEurPer100km,
     costPerKm: blendedEurPer100km != null ? round(blendedEurPer100km / 100, 3) : null,
     lastFuel: last,
