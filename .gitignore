@@ -5,6 +5,9 @@
 *.xlsx
 *.xls
 
+# Archived legacy data / docs (kept out of the Netlify deploy)
+_archive/
+
 # OS
 .DS_Store
 Thumbs.db
