@@ -22,44 +22,54 @@ const MERCEDES = [
   fill('2026-06-22', 180173, 47.66,  90.00, true,  { price_per_liter: 1.888 }),
 ]
 
-test('Mercedes history: measured periods', () => {
+// The core fix: a fill owns the leg to the NEXT fill, not the one behind it.
+test('distance is the leg to the next fill, not the previous one', () => {
   const e = enrich(MERCEDES)
-  assert.equal(e[0].l_per_100km, null)          // baseline — nothing to measure yet
-  assert.equal(e[0].is_baseline, true)
-  assert.equal(e[1].l_per_100km, 8.2)           // 48.64 L / 591 km
-  assert.equal(e[1].eur_per_100km, 17.36)       // €102.58 / 591 km
-  assert.equal(e[4].l_per_100km, 9.6)           // (16.59+20.46+47.66) L / 885 km
-  assert.equal(e[4].eur_per_100km, 17.85)       // €(30+38+90) / 885 km
+  assert.equal(e[0].distance_km, 591)   // 03-04 → 03-27
+  assert.equal(e[1].distance_km, 651)   // 03-27 → 05-30
+  assert.equal(e[2].distance_km, 142)   // 05-30 → 06-13  (was wrongly 651 before)
+  assert.equal(e[3].distance_km, 92)    // 06-13 → 06-22
+  assert.equal(e[4].distance_km, null)  // newest fill: no next leg yet
 })
 
-test('Mercedes history: partial fills get proportional leg projections, not blanks', () => {
+test('full tanks are measured over their forward leg; newest fill is pending', () => {
+  const e = enrich(MERCEDES)
+  assert.equal(e[0].l_per_100km, 8.8)           // 52.19 L over the 591 km it powered
+  assert.equal(e[0].eur_per_100km, 18.37)       // €108.56 over 591 km
+  assert.equal(e[1].l_per_100km, 7.5)           // 48.64 L over 651 km
+  assert.equal(e[1].eur_per_100km, 15.76)       // €102.58 over 651 km
+  assert.equal(e[4].is_pending, true)           // fuel not used up yet
+  assert.equal(e[4].l_per_100km, null)
+})
+
+test('partial fills project over their own forward leg — sane, not absurd', () => {
   const e = enrich(MERCEDES)
   for (const i of [2, 3]) {
     assert.equal(e[i].l_per_100km, null)
     assert.equal(e[i].is_estimate, true)
   }
-  assert.equal(e[2].est_l_per_100km, 2.5)       // 16.59 L / 651 km × 100
-  assert.equal(e[2].est_eur_per_100km, 4.61)    // €30 / 651 km × 100
-  assert.equal(e[3].est_l_per_100km, 14.4)      // 20.46 L / 142 km × 100
-  assert.equal(e[3].est_eur_per_100km, 26.76)   // €38 / 142 km × 100
+  assert.equal(e[2].est_l_per_100km, 11.7)      // 16.59 L over its real 142 km leg
+  assert.equal(e[2].est_eur_per_100km, 21.13)   // €30 over 142 km
+  assert.equal(e[3].est_l_per_100km, 22.2)      // 20.46 L over 92 km
+  assert.equal(e[3].est_eur_per_100km, 41.3)    // €38 over 92 km
 })
 
-test('Mercedes history: blended stats count partials', () => {
+test('blended stats count partials and stay on pure distance', () => {
   const s = computeFuelStats(enrich(MERCEDES))
   assert.equal(s.fillCount, 5)
   assert.equal(s.totalKm, 1476)                             // 180173 − 178697
-  assert.equal(s.blendedEurPer100km, 17.65)                 // €260.58 / 1476 km
-  assert.equal(s.costPerKm, 0.177)
-  assert.equal(s.measuredAvgL100, 9.0)                      // distance-weighted, not mean of ratios
-  assert.equal(s.blendedAvgL100, 9.0)                       // 133.35 L / 1476 km — partials count
+  assert.equal(s.blendedAvgL100, 9.3)                       // 137.88 L / 1476 km
+  assert.equal(s.blendedEurPer100km, 18.91)                 // €279.14 / 1476 km
+  assert.equal(s.costPerKm, 0.189)
+  assert.equal(s.measuredAvgL100, 8.1)                      // full tanks only: 100.83 L / 1242 km
   assert.equal(s.totalCost, 369.14)
   assert.equal(s.lastOdometer, 180173)
 })
 
-test('trend includes estimate points so charts are never empty mid-period', () => {
+test('trend shifts back one fill; the newest (pending) fill drops off', () => {
   const t = efficiencyTrend(enrich(MERCEDES))
-  assert.deepEqual(t.map(p => p.value), [8.2, 2.5, 14.4, 9.6])
-  assert.deepEqual(t.map(p => p.isEstimate), [false, true, true, false])
+  assert.deepEqual(t.map(p => p.value), [8.8, 7.5, 11.7, 22.2])
+  assert.deepEqual(t.map(p => p.isEstimate), [false, false, true, true])
 })
 
 // ── Edge-case matrix ──
@@ -70,68 +80,62 @@ test('empty input', () => {
   assert.equal(s.fillCount, 0)
   assert.equal(s.totalKm, null)
   assert.equal(s.measuredAvgL100, null)
-  assert.equal(s.blendedEurPer100km, null)
+  assert.equal(s.blendedAvgL100, null)
 })
 
-test('single full fill = baseline only', () => {
+test('single fill is pending — nothing consumed yet', () => {
   const e = enrich([fill('2026-01-01', 1000, 40, 80)])
-  assert.equal(e[0].is_baseline, true)
+  assert.equal(e[0].is_pending, true)
   assert.equal(e[0].l_per_100km, null)
-  assert.equal(e[0].is_estimate, false)         // no distance → nothing to estimate
+  assert.equal(e[0].distance_km, null)
 })
 
-test('two full fills = second is measured', () => {
+test('two full fills: the first is measured, the second is pending', () => {
   const e = enrich([fill('2026-01-01', 1000, 40, 80), fill('2026-02-01', 1500, 35, 70)])
-  assert.equal(e[1].l_per_100km, 7)             // 35 / 500 × 100
-  assert.equal(e[1].eur_per_100km, 14)
-})
-
-test('history starting with a partial: first full gets a proportional leg projection', () => {
-  const e = enrich(
-    [fill('2026-01-01', 1000, 20, 40, false), fill('2026-01-10', 1400, 40, 90, true)],
-  )
-  // The full tank can't be measured (unknown tank level at history start)…
+  assert.equal(e[0].l_per_100km, 8)             // 40 L over its 500 km leg
+  assert.equal(e[0].eur_per_100km, 16)
+  assert.equal(e[1].is_pending, true)
   assert.equal(e[1].l_per_100km, null)
-  // …but it has a leg, so it gets a clearly-flagged projection.
-  assert.equal(e[1].is_estimate, true)
-  assert.equal(e[1].est_l_per_100km, 10)        // 40 L / 400 km × 100
-  assert.equal(e[1].est_eur_per_100km, 22.5)    // €90 / 400 km × 100
 })
 
-test('trailing partials after the last full tank get leg projections', () => {
+test('a mid-history partial projects over its forward leg; newest stays pending', () => {
   const e = enrich([
     fill('2026-01-01', 1000, 40, 80),
-    fill('2026-02-01', 1500, 40, 80),           // measured: 8 L/100km
-    fill('2026-02-15', 1700, 15, 30, false),    // trailing partial: 200 km leg
+    fill('2026-01-20', 1500, 15, 30, false),
+    fill('2026-02-01', 1600, 20, 40),
   ])
-  assert.equal(e[2].is_estimate, true)
-  assert.equal(e[2].est_l_per_100km, 7.5)       // 15 L / 200 km × 100
-  assert.equal(e[2].est_eur_per_100km, 15)      // €30 / 200 km × 100
+  assert.equal(e[0].l_per_100km, 8)             // 40 / 500
+  assert.equal(e[1].is_estimate, true)
+  assert.equal(e[1].est_l_per_100km, 15)        // 15 L over its 100 km leg
+  assert.equal(e[1].est_eur_per_100km, 30)      // €30 over 100 km
+  assert.equal(e[2].is_pending, true)
 })
 
 test('projections never affect distance or monthly stats', () => {
   const rows = [
     fill('2026-01-01', 1000, 40, 80),
-    fill('2026-01-20', 1500, 15, 30, false),    // partial with projection
+    fill('2026-01-20', 1500, 15, 30, false),    // partial with a projection
+    fill('2026-02-01', 1600, 20, 40),
   ]
   const s = computeFuelStats(enrich(rows))
-  assert.equal(s.totalKm, 500)                  // pure odometer math
-  const m = monthlySpend(rows, { months: 1, today: new Date(2026, 0, 25) })
-  assert.equal(m[0].total, 110)                 // real euros only, no projected values
+  assert.equal(s.totalKm, 600)                  // 500 + 100, pure odometer
+  const m = monthlySpend(rows, { months: 2, today: new Date(2026, 1, 25) })
+  assert.equal(m[0].total, 110)                 // Jan: 80 + 30, real euros only
+  assert.equal(m[1].total, 40)                  // Feb: 40
 })
 
-test('odometer going backwards is flagged and never yields negative efficiency', () => {
+test('odometer going backwards flags the leg and never yields a value', () => {
   const e = enrich([
     fill('2026-01-01', 1000, 40, 80),
     fill('2026-02-01', 900, 35, 70),            // typo: odometer decreased
-    fill('2026-03-01', 1400, 38, 76),           // recovery leg measured from row 1 (odo 900)
+    fill('2026-03-01', 1400, 38, 76),
   ])
-  assert.equal(e[1].odo_anomaly, true)
-  assert.equal(e[1].distance_km, null)
-  assert.equal(e[1].l_per_100km, null)
-  assert.equal(e[2].odo_anomaly, false)
-  assert.equal(e[2].distance_km, 500)
-  assert.equal(e[2].l_per_100km, 7.6)           // 38 / 500 × 100 — fresh period after reset
+  assert.equal(e[0].odo_anomaly, true)          // next odometer 900 ≤ 1000
+  assert.equal(e[0].distance_km, null)
+  assert.equal(e[0].l_per_100km, null)
+  assert.equal(e[1].distance_km, 500)           // 1400 − 900
+  assert.equal(e[1].l_per_100km, 7)             // 35 / 500 × 100
+  assert.equal(e[2].is_pending, true)
   const s = computeFuelStats(e)
   assert.equal(s.totalKm, 500)                  // anomalous leg excluded
 })
@@ -141,7 +145,7 @@ test('numeric strings from the DB are coerced, never concatenated', () => {
     { date: '2026-01-01', odometer_km: '1000', liters: '40', total_cost: '80', is_full_tank: true },
     { date: '2026-02-01', odometer_km: '1500', liters: '35.5', total_cost: '71', is_full_tank: true },
   ])
-  assert.equal(e[1].l_per_100km, 7.1)
+  assert.equal(e[0].l_per_100km, 8)             // 40 / 500 × 100
   const s = computeFuelStats(e)
   assert.equal(s.totalCost, 151)                // 80 + 71, not "8071"
 })
@@ -152,7 +156,8 @@ test('rows are sorted by date even if stored out of order', () => {
     fill('2026-01-01', 1000, 40, 80),
   ])
   assert.equal(e[0].date, '2026-01-01')
-  assert.equal(e[1].l_per_100km, 7)
+  assert.equal(e[0].l_per_100km, 8)             // 40 / 500 × 100
+  assert.equal(e[1].is_pending, true)
 })
 
 test('monthlySpend buckets by calendar month without end-of-month drift', () => {

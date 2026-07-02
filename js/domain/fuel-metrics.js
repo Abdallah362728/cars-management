@@ -1,17 +1,18 @@
 // Fuel consumption & cost metrics — pure functions, no DOM, no Supabase.
 //
-// Methodology (hybrid):
-//  1. MEASURED L/100km & €/100km are only physically exact between two FULL
-//     tanks. Partial fills roll their liters/cost into the open period; the
-//     next full tank closes the period and carries the measured values.
-//  2. BLENDED €/100km (computeFuelStats) = total spend ÷ total distance, so
-//     partial fills always count toward cost statistics.
-//  3. ESTIMATED values are attached to rows that can't get a measured value
-//     (partials, first full tank after an unknown start) by proportional
-//     projection of the row's own leg: liters ÷ km driven × 100 (and cost ÷
-//     km × 100). Drove 50 km on 3 L → 6 L/100km. They are flagged
-//     `is_estimate` so the UI renders them as estimates, never as facts,
-//     and they never affect distance or monthly-km statistics.
+// Attribution model (FORWARD): the fuel you add at a fill powers the distance
+// you drive UNTIL your next fill. So a fill's consumption is its own liters
+// divided by the leg to the *next* fill — never the leg since the previous
+// one. (Filling 16 L that only has to cover the next 142 km reads ~11 L/100km,
+// not the nonsensical 2.5 you'd get by crediting it with the 651 km that the
+// PREVIOUS tank actually powered.)
+//
+//  - The most recent fill is "pending": its fuel hasn't been used up yet, so
+//    it has no number until you fill again.
+//  - Full tanks give a "measured" figure (a whole tank over its leg); partial
+//    top-ups give a rougher, flagged "estimate".
+//  - Distance / monthly-spend stats are pure odometer & euro math — projected
+//    values never feed them.
 
 import { round, daysBetween, todayStr } from './format.js'
 
@@ -42,86 +43,57 @@ export function normalizeFuelRows(rows) {
 
 // Input must come from normalizeFuelRows (ascending, numerics coerced).
 export function enrichFuelLogs(rows) {
-  let baselineIdx = null        // index of the previous full-tank baseline
-  let periodLiters = 0
-  let periodCost = 0
-  let prevOdoIdx = null         // previous row with a valid odometer (for leg distance)
+  const n = rows.length
 
-  // ── Pass 1: legs, anomalies, measured full→full periods ──
-  const out = rows.map((row, i) => {
+  return rows.map((row, i) => {
     const prev = i > 0 ? rows[i - 1] : null
-    const days = prev && prev.date && row.date ? daysBetween(prev.date, row.date) : null
+    const next = i < n - 1 ? rows[i + 1] : null
+    const daysSinceLast = prev && prev.date && row.date ? daysBetween(prev.date, row.date) : null
 
+    // Forward leg: distance this fill's fuel powers, up to the next fill.
     let distance = null
-    let anomaly = false
-    if (row.odometer_km != null && prevOdoIdx !== null) {
-      const leg = row.odometer_km - rows[prevOdoIdx].odometer_km
+    let odoAnomaly = false
+    if (row.odometer_km != null && next && next.odometer_km != null) {
+      const leg = next.odometer_km - row.odometer_km
       if (leg > 0) distance = leg
-      else anomaly = true       // odometer went backwards (or repeated): typo or reset
+      else odoAnomaly = true          // next odometer not greater: typo or reset
     }
+    const daysSpan = (next && next.date && row.date) ? daysBetween(row.date, next.date) : null
 
-    // An anomalous or missing odometer poisons the open period — discard it.
-    if (anomaly || row.odometer_km == null) {
-      baselineIdx = null
-      periodLiters = 0
-      periodCost = 0
-    }
+    // The newest fill has no next leg yet — its fuel is still in the tank.
+    const isPending = next == null && row.odometer_km != null
 
-    // Roll this fill into the open measurement period.
-    periodLiters += row.liters
-    periodCost += row.total_cost
-
-    let l100 = null, eur100 = null, periodKm = null
-    if (row.is_full_tank && baselineIdx !== null && row.odometer_km != null) {
-      const dist = row.odometer_km - rows[baselineIdx].odometer_km
-      if (dist > 0) {
-        periodKm = dist
-        l100 = round(periodLiters / dist * 100, 1)
-        eur100 = round(periodCost / dist * 100, 2)
+    let l100 = null, eur100 = null, estL100 = null, estEur100 = null, isEstimate = false
+    if (distance != null) {
+      if (row.is_full_tank) {
+        if (row.liters > 0) l100 = round(row.liters / distance * 100, 1)
+        if (row.total_cost > 0) eur100 = round(row.total_cost / distance * 100, 2)
+      } else {
+        // Partial top-up: liters added don't equal a tank's worth, so this is
+        // a projection, not a measurement.
+        if (row.liters > 0) estL100 = round(row.liters / distance * 100, 1)
+        if (row.total_cost > 0) estEur100 = round(row.total_cost / distance * 100, 2)
+        isEstimate = estL100 != null || estEur100 != null
       }
     }
-
-    const isBaseline = row.is_full_tank && baselineIdx === null
-
-    // A full tank with a trustworthy odometer closes the period and becomes
-    // the next baseline.
-    if (row.is_full_tank && row.odometer_km != null) {
-      baselineIdx = i
-      periodLiters = 0
-      periodCost = 0
-    }
-    if (row.odometer_km != null) prevOdoIdx = i
 
     return {
       ...row,
       distance_km: distance,
-      days_since_last: days,
+      days_since_last: daysSinceLast,
+      days_span: daysSpan,
       l_per_100km: l100,
       eur_per_100km: eur100,
       eur_per_km: eur100 != null ? round(eur100 / 100, 3) : null,
-      period_km: periodKm,
-      est_l_per_100km: null,
-      est_eur_per_100km: null,
-      is_estimate: false,
-      is_baseline: isBaseline,
-      odo_anomaly: anomaly,
-      daily_km: (distance && days && days > 0) ? round(distance / days, 1) : null,
-      daily_cost: (days && days > 0) ? round(row.total_cost / days, 2) : null,
+      est_l_per_100km: estL100,
+      est_eur_per_100km: estEur100,
+      is_estimate: isEstimate,
+      is_pending: isPending,
+      odo_anomaly: odoAnomaly,
+      daily_km: (distance && daysSpan && daysSpan > 0) ? round(distance / daysSpan, 1) : null,
+      daily_cost: (daysSpan && daysSpan > 0) ? round(row.total_cost / daysSpan, 2) : null,
     }
   })
-
-  // ── Pass 2: proportional projection for rows without a measured value ──
-  // The row's own leg, scaled to 100 km: what went in ÷ what was driven.
-  for (const row of out) {
-    if (row.l_per_100km != null) continue
-    if (row.distance_km == null || row.distance_km <= 0) continue
-
-    if (row.liters > 0) row.est_l_per_100km = round(row.liters / row.distance_km * 100, 1)
-    if (row.total_cost > 0) row.est_eur_per_100km = round(row.total_cost / row.distance_km * 100, 2)
-    row.is_estimate = row.est_l_per_100km != null || row.est_eur_per_100km != null
-  }
-
-  return out
 }
 
 export function computeFuelStats(enriched) {
@@ -130,25 +102,22 @@ export function computeFuelStats(enriched) {
   const totalLiters = round(rows.reduce((s, r) => s + r.liters, 0), 2)
   const totalCost = round(rows.reduce((s, r) => s + r.total_cost, 0), 2)
 
-  // Distance & cost/liters over tracked legs only (anomalous legs excluded).
-  // The distance itself is pure odometer math — estimates never touch it.
-  const legs = rows.filter(r => r.distance_km != null && r.distance_km > 0)
-  const totalKm = legs.reduce((s, r) => s + r.distance_km, 0)
-  const costOverLegs = legs.reduce((s, r) => s + r.total_cost, 0)
-  const litersOverLegs = legs.reduce((s, r) => s + r.liters, 0)
+  // Forward legs — each fill's distance to the next. Their sum is the total
+  // distance driven, and it stays pure odometer math (no projections).
+  const withLeg = rows.filter(r => r.distance_km != null && r.distance_km > 0)
+  const totalKm = withLeg.reduce((s, r) => s + r.distance_km, 0)
+  const litersOverLegs = withLeg.reduce((s, r) => s + r.liters, 0)
+  const costOverLegs = withLeg.reduce((s, r) => s + r.total_cost, 0)
 
-  // Measured average: distance-weighted over closed full→full periods only.
-  const measured = rows.filter(r => r.l_per_100km != null && r.period_km > 0)
-  const periodKm = measured.reduce((s, r) => s + r.period_km, 0)
-  const periodLiters = measured.reduce((s, r) => s + r.l_per_100km * r.period_km / 100, 0)
-  const measuredAvgL100 = periodKm > 0 ? round(periodLiters / periodKm * 100, 1) : null
+  // Measured average: full tanks that have a forward leg.
+  const full = withLeg.filter(r => r.is_full_tank)
+  const fullKm = full.reduce((s, r) => s + r.distance_km, 0)
+  const fullLiters = full.reduce((s, r) => s + r.liters, 0)
+  const measuredAvgL100 = fullKm > 0 ? round(fullLiters / fullKm * 100, 1) : null
 
-  // Blended average consumption: all liters over all tracked km — partial
-  // fills count proportionally (the user's projection method, aggregated).
+  // Blended average: every fill that has a forward leg — partials included.
   const blendedAvgL100 = (totalKm > 0 && litersOverLegs > 0)
     ? round(litersOverLegs / totalKm * 100, 1) : null
-
-  // Blended cost: every euro after the tracking start counts, partials included.
   const blendedEurPer100km = (totalKm > 0 && costOverLegs > 0)
     ? round(costOverLegs / totalKm * 100, 2) : null
 
@@ -186,8 +155,8 @@ export function monthlySpend(rows, { months = 6, today = new Date() } = {}) {
   })
 }
 
-// Chart series: measured points plus flagged estimates, so the trend is
-// never empty just because the latest fills were partial.
+// Chart series: measured points plus flagged estimates. The newest (pending)
+// fill has no value yet, so it drops off the end of the trend.
 export function efficiencyTrend(enriched, { limit = 10 } = {}) {
   return (enriched || [])
     .filter(r => r.l_per_100km != null || r.est_l_per_100km != null)

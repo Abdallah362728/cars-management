@@ -78,7 +78,8 @@ export async function render(container, state, epoch) {
   const avgL100 = stats.blendedAvgL100 ?? stats.measuredAvgL100
   const overSpec = avgL100 != null && spec != null && avgL100 > spec + 1
   const vsFactory = (avgL100 != null && spec) ? round(avgL100 - spec, 1) : null
-  const lastPoint = data.trend[data.trend.length - 1]
+  const last = stats.lastFuel
+  const lastVal = last ? (last.l_per_100km ?? last.est_l_per_100km) : null
   const hasEstimates = data.trend.some(t => t.isEstimate)
 
   grid.innerHTML = `
@@ -162,10 +163,13 @@ export async function render(container, state, epoch) {
           <p class="mute num" style="font-size:11px;margin-top:2px">${fmtMoney(stats.lastFuel.price_per_liter, { decimals: 3 })}/L · ${stats.lastFuel.date}</p>
         </div>
         <div style="text-align:right">
-          ${lastPoint
-            ? `<p class="num" style="font-size:17px;font-weight:600;color:${lastPoint.isEstimate ? 'var(--amber)' : overSpec ? 'var(--danger)' : 'var(--ok)'}">${lastPoint.isEstimate ? '~' : ''}${fmtNum(lastPoint.value)}</p>
-               <p class="micro">${lastPoint.isEstimate ? 'L/100km est' : 'L/100km'}</p>`
-            : '<p class="mute">—</p>'}
+          ${last.is_pending
+            ? `<p class="num" style="font-size:15px;font-weight:600;color:var(--ink-mute)">PENDING</p>
+               <p class="micro">measured at next fill</p>`
+            : lastVal != null
+              ? `<p class="num" style="font-size:17px;font-weight:600;color:${last.is_estimate ? 'var(--amber)' : overSpec ? 'var(--danger)' : 'var(--ok)'}">${last.is_estimate ? '~' : ''}${fmtNum(lastVal)}</p>
+                 <p class="micro">${last.is_estimate ? 'L/100km est' : 'L/100km'}</p>`
+              : '<p class="mute">—</p>'}
         </div>
       </div>
     </div>` : `

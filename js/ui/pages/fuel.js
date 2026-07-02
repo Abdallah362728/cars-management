@@ -89,14 +89,14 @@ export async function render(container, state, epoch) {
         let pillClass, pillText
         if (log.odo_anomaly) {
           pillClass = 'pill--danger'; pillText = 'CHECK ODO'
+        } else if (log.is_pending) {
+          pillClass = 'pill--muted'; pillText = 'PENDING'
         } else if (measured) {
           pillClass = overSpec ? 'pill--danger' : 'pill--ok'
           pillText = `${fmtNum(log.l_per_100km)} MEASURED`
         } else if (estimated) {
           pillClass = 'pill--est'
           pillText = `~${fmtNum(log.est_l_per_100km)} EST`
-        } else if (log.is_baseline) {
-          pillClass = 'pill--muted'; pillText = 'BASELINE'
         } else {
           pillClass = 'pill--info'; pillText = 'PARTIAL'
         }
@@ -123,10 +123,11 @@ export async function render(container, state, epoch) {
           </div>
           ${log.distance_km != null ? `
           <div class="ledger-cols" style="border-top:var(--hairline);padding-top:8px;margin-top:8px">
-            <div><p class="micro">Leg</p><p class="num">${log.distance_km.toLocaleString()} km</p></div>
+            <div><p class="micro">Leg to next</p><p class="num">${log.distance_km.toLocaleString()} km</p></div>
             <div><p class="micro">€ / 100km</p><p class="num" style="color:${estimated && log.eur_per_100km == null ? 'var(--amber)' : 'var(--ink)'}">${eur100Text}</p></div>
-            <div><p class="micro">Days</p><p class="num">${log.days_since_last ?? '—'}</p></div>
+            <div><p class="micro">Days</p><p class="num">${log.days_span ?? '—'}</p></div>
           </div>` : ''}
+          ${log.is_pending ? `<p class="mute" style="font-size:11px;margin-top:8px;padding-top:8px;border-top:var(--hairline)">Newest fill — its consumption is measured once you fill up again.</p>` : ''}
           ${log.notes ? `<p class="mute" style="font-size:11px;margin-top:8px;padding-top:8px;border-top:var(--hairline)">${esc(log.notes)}</p>` : ''}
           <div style="display:flex;justify-content:flex-end;margin-top:6px">
             <button data-id="${log.id}" class="delete-fuel-btn btn--danger-text">DELETE</button>
