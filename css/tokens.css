@@ -1,0 +1,41 @@
+/* Design tokens — the single source of truth for the blueprint theme.
+   Everything visual derives from these custom properties. */
+
+:root {
+  /* Surfaces */
+  --bg:         #0E141C;
+  --surface:    #121A24;
+  --surface-2:  #17212D;
+
+  /* Lines */
+  --line:        #22303F;
+  --line-strong: #2E4054;
+  --grid:        rgba(94, 113, 134, 0.07);
+
+  /* Ink */
+  --ink:       #D9E2EC;
+  --ink-mute:  #5E7186;
+  --ink-faint: #3C4C5F;
+
+  /* Accents */
+  --amber:      #E8A33D;
+  --amber-dim:  rgba(232, 163, 61, 0.14);
+  --amber-ink:  #10151C;              /* text on amber fills */
+  --ok:         #58B573;
+  --ok-dim:     rgba(88, 181, 115, 0.12);
+  --danger:     #D95C5C;
+  --danger-dim: rgba(217, 92, 92, 0.12);
+  --info:       #5A8DC8;
+  --info-dim:   rgba(90, 141, 200, 0.12);
+
+  /* Type */
+  --font:      ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SF Mono", Menlo, Consolas, monospace;
+
+  /* Geometry — blueprint = crisp hairlines, small radii */
+  --r:        4px;
+  --r-lg:     8px;
+  --hairline: 1px solid var(--line);
+  --pad:      16px;
+  --nav-h:    62px;
+}

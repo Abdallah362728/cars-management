@@ -15,10 +15,10 @@ async function bootstrap() {
   } catch (err) {
     console.error(err)
     document.getElementById('app').innerHTML = `
-      <div class="flex flex-col items-center justify-center p-8 text-center" style="min-height:60dvh">
-        <p class="text-red-400 font-semibold mb-2">Could not reach the database</p>
-        <p class="text-slate-500 text-sm">${String(err?.message ?? err)}</p>
-        <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-slate-700 text-slate-300 rounded-xl text-sm">Retry</button>
+      <div class="center-screen">
+        <p style="color:var(--danger);font-weight:600;margin-bottom:8px">Could not reach the database</p>
+        <p class="mute" style="font-size:13px">${String(err?.message ?? err)}</p>
+        <button onclick="location.reload()" class="btn" style="margin-top:16px">Retry</button>
       </div>`
     return
   }

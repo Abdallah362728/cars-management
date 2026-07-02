@@ -1,5 +1,5 @@
 import { getSchedule, updateScheduleItem } from '../../data/maintenance-repo.js'
-import { getFuelLogsRaw, } from '../../data/fuel-repo.js'
+import { getFuelLogsRaw } from '../../data/fuel-repo.js'
 import { addCost } from '../../data/costs-repo.js'
 import { getCars } from '../../data/cars-repo.js'
 import { computeScheduleStatus } from '../../domain/schedule.js'
@@ -12,10 +12,11 @@ export async function render(container, state, epoch) {
   container.innerHTML = ''
 
   const header = document.createElement('div')
-  header.className = 'px-5 pt-5 pb-3'
+  header.className = 'page-title'
   header.innerHTML = `
-    <h1 class="text-white text-2xl font-bold tracking-tight">Additional</h1>
-    <p class="text-slate-500 text-sm">Maintenance schedule & car history</p>
+    <p class="micro" style="margin-bottom:3px">Service</p>
+    <h1>Maintenance</h1>
+    <p class="mute" style="font-size:12px;margin-top:2px">Schedule & vehicle history</p>
   `
   container.appendChild(header)
 
@@ -29,8 +30,8 @@ export async function render(container, state, epoch) {
 
 async function renderSchedule(container, state, epoch) {
   const loadingEl = document.createElement('div')
-  loadingEl.className = 'px-4 space-y-2 mb-4'
-  loadingEl.innerHTML = Array(5).fill('<div class="skeleton h-16 rounded-2xl"></div>').join('')
+  loadingEl.className = 'section'
+  loadingEl.innerHTML = Array(5).fill('<div class="skeleton" style="height:60px;margin-bottom:8px"></div>').join('')
   container.appendChild(loadingEl)
 
   let schedule, lastOdometer
@@ -50,54 +51,67 @@ async function renderSchedule(container, state, epoch) {
   loadingEl.remove()
 
   const schedEl = document.createElement('div')
-  schedEl.className = 'px-4 mb-5'
+  schedEl.className = 'section'
 
-  const neverDone = schedule.filter(s => !s.last_done_km && !s.last_done_date)
-  if (neverDone.length > 0) {
+  const withStatus = schedule.map(item => ({
+    item,
+    computed: computeScheduleStatus(item, lastOdometer),
+  }))
+
+  // Summary strip
+  const counts = { overdue: 0, due_soon: 0, ok: 0, never_done: 0 }
+  withStatus.forEach(({ computed }) => counts[computed.status]++)
+  schedEl.innerHTML += `
+    <div class="card data-strip" style="margin-bottom:14px">
+      <div><p class="stat-value num" style="color:var(--danger)">${counts.overdue}</p><p class="micro">Overdue</p></div>
+      <div><p class="stat-value num" style="color:var(--amber)">${counts.due_soon}</p><p class="micro">Due soon</p></div>
+      <div><p class="stat-value num" style="color:var(--ok)">${counts.ok}</p><p class="micro">OK</p></div>
+      <div><p class="stat-value num" style="color:var(--ink-mute)">${counts.never_done}</p><p class="micro">No data</p></div>
+    </div>
+  `
+
+  if (counts.never_done > 0) {
     schedEl.innerHTML += `
-      <div class="mb-3 bg-indigo-500/8 border border-indigo-500/25 rounded-2xl p-3.5">
-        <p class="text-indigo-400 font-semibold text-sm">${neverDone.length} items need initialization</p>
-        <p class="text-slate-500 text-xs mt-0.5">Tap an item to enter when it was last done</p>
+      <div class="card" style="border-style:dashed;margin-bottom:14px">
+        <p style="font-size:12.5px;font-weight:600;color:var(--info)">${counts.never_done} items need initialization</p>
+        <p class="mute" style="font-size:11px;margin-top:2px">Tap an item to enter when it was last done</p>
       </div>
     `
   }
 
-  schedEl.innerHTML += `<span class="section-label">Service Schedule — ${esc(state.activeCar.make)} ${esc(state.activeCar.model)}</span>`
+  schedEl.innerHTML += `<div class="dim-line"><span class="micro">Service schedule — ${esc(state.activeCar.make)} ${esc(state.activeCar.model)}</span></div>`
 
   const ORDER = { overdue: 0, due_soon: 1, ok: 2, never_done: 3 }
-  const withStatus = schedule.map(item => ({
-    item,
-    computed: computeScheduleStatus(item, lastOdometer),
-  })).sort((a, b) => ORDER[a.computed.status] - ORDER[b.computed.status])
+  withStatus.sort((a, b) => ORDER[a.computed.status] - ORDER[b.computed.status])
 
-  const colorMap = {
-    overdue:    { dot: 'bg-red-500',    pill: 'pill-red' },
-    due_soon:   { dot: 'bg-amber-500',  pill: 'pill-amber' },
-    ok:         { dot: 'bg-green-500',  pill: 'pill-green' },
-    never_done: { dot: 'bg-indigo-500', pill: 'pill-indigo' },
+  const pillMap = {
+    overdue:    'pill--danger',
+    due_soon:   'pill--warn',
+    ok:         'pill--ok',
+    never_done: 'pill--muted',
   }
 
   withStatus.forEach(({ item, computed }) => {
-    const colors = colorMap[computed.status]
     let subtitle = ''
-    if (item.interval_km)     subtitle += `Every ${item.interval_km.toLocaleString()} km`
-    if (item.interval_months) subtitle += (subtitle ? ' or ' : '') + `${item.interval_months} months`
-    if (item.last_done_date)  subtitle += ` · Done: ${item.last_done_date}`
+    if (item.interval_km)     subtitle += `EVERY ${item.interval_km.toLocaleString()} KM`
+    if (item.interval_months) subtitle += (subtitle ? ' / ' : 'EVERY ') + `${item.interval_months} MO`
+    if (item.last_done_date)  subtitle += ` · DONE ${item.last_done_date}`
 
     let nextInfo = ''
-    if (computed.nextKm)   nextInfo += `Next: ${computed.nextKm.toLocaleString()} km`
-    if (computed.daysUntil != null) nextInfo += (nextInfo ? ' · ' : '') + (computed.daysUntil < 0 ? `${Math.abs(computed.daysUntil)}d overdue` : `${computed.daysUntil}d left`)
+    if (computed.kmRemaining != null) nextInfo += computed.kmRemaining < 0 ? `${Math.abs(computed.kmRemaining).toLocaleString()} km over` : `${computed.kmRemaining.toLocaleString()} km left`
+    if (computed.daysUntil != null) nextInfo += (nextInfo ? ' · ' : '') + (computed.daysUntil < 0 ? `${Math.abs(computed.daysUntil)}d over` : `${computed.daysUntil}d left`)
 
     const row = document.createElement('div')
-    row.className = 'card flex items-center gap-3 mb-2 cursor-pointer active:scale-[0.98] transition-transform'
+    row.className = 'card row'
+    row.style.cssText = 'margin-bottom:8px;cursor:pointer'
     row.innerHTML = `
-      <div class="w-2 h-2 rounded-full ${colors.dot} flex-shrink-0"></div>
-      <div class="flex-1 min-w-0">
-        <p class="text-white text-sm font-semibold">${esc(item.item_name)}</p>
-        <p class="text-slate-500 text-xs truncate">${esc(subtitle)}</p>
-        ${nextInfo ? `<p class="text-slate-400 text-xs">${nextInfo}</p>` : ''}
+      <div class="status-sq status-sq--${computed.status}"></div>
+      <div style="flex:1;min-width:0">
+        <p style="font-size:13px;font-weight:600">${esc(item.item_name)}</p>
+        <p class="micro num" style="margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(subtitle)}</p>
+        ${nextInfo ? `<p class="mute num" style="font-size:11px;margin-top:1px">${nextInfo}</p>` : ''}
       </div>
-      <span class="pill ${colors.pill} flex-shrink-0">${computed.label}</span>
+      <span class="pill ${pillMap[computed.status]}">${computed.label.toUpperCase()}</span>
     `
     row.addEventListener('click', () => openMarkDoneModal(item, state))
     schedEl.appendChild(row)
@@ -110,26 +124,26 @@ function openMarkDoneModal(item, state) {
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
-    <h2 class="text-white text-lg font-bold mb-1">${esc(item.item_name)}</h2>
-    <p class="text-slate-500 text-sm mb-5">Mark as done — enter when it was completed</p>
-    <form id="done-form" class="space-y-4">
+    <h2 class="modal-title" style="margin-bottom:4px">${esc(item.item_name)}</h2>
+    <p class="mute" style="font-size:12px;margin-bottom:16px">Mark as done — enter when it was completed</p>
+    <form id="done-form" class="form-stack">
       <div>
-        <label class="section-label">Date Completed</label>
+        <label class="micro">Date completed</label>
         <input type="date" name="done_date" value="${today}" required autocomplete="off">
       </div>
       <div>
-        <label class="section-label">Odometer at time (km)</label>
-        <input type="number" name="done_km" inputmode="decimal" placeholder="optional" autocomplete="off" style="font-size:20px;font-weight:700;">
+        <label class="micro">Odometer at time (km)</label>
+        <input type="number" name="done_km" inputmode="decimal" placeholder="optional" autocomplete="off" style="font-size:19px;font-weight:600">
       </div>
       <div>
-        <label class="section-label">Cost (€)</label>
+        <label class="micro">Cost (€)</label>
         <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" autocomplete="off">
       </div>
       <div>
-        <label class="section-label">Notes (optional)</label>
+        <label class="micro">Notes (optional)</label>
         <input type="text" name="notes" placeholder="" autocomplete="off">
       </div>
-      ${modalFooter('Cancel', 'Mark as Done')}
+      ${modalFooter('Cancel', 'Mark as done')}
     </form>
   `)
 
@@ -164,11 +178,11 @@ function openMarkDoneModal(item, state) {
       }
 
       closeModal()
-      showToast(`${item.item_name} marked as done!`)
+      showToast(`${item.item_name} marked as done`)
       route()
     } catch (err) {
       showToast(err.message, 'error')
-      btn.textContent = 'Mark as Done'
+      btn.textContent = 'Mark as done'
       btn.disabled = false
     }
   })
@@ -187,8 +201,8 @@ async function renderCarHistory(container, epoch) {
   if (sold.length === 0) return
 
   const histEl = document.createElement('div')
-  histEl.className = 'px-4 mb-6'
-  histEl.innerHTML = `<span class="section-label">Past Cars</span>`
+  histEl.className = 'section'
+  histEl.innerHTML = `<div class="dim-line"><span class="micro">Vehicle history</span></div>`
 
   sold.forEach(car => {
     const netLoss = (car.purchase_price && car.sell_price)
@@ -196,29 +210,18 @@ async function renderCarHistory(container, epoch) {
     const currency = car.purchase_currency || 'EUR'
 
     histEl.innerHTML += `
-      <div class="card mb-2 opacity-70">
-        <div class="flex justify-between items-start mb-2">
+      <div class="card" style="margin-bottom:8px;opacity:0.75">
+        <div class="row-between" style="margin-bottom:10px">
           <div>
-            <p class="text-white font-bold text-sm">${esc(car.make)} ${esc(car.model)} ${car.year}</p>
-            <p class="text-slate-500 text-xs">${esc(car.purchase_date ?? '?')} – ${esc(car.sell_date ?? '?')} · ${esc(car.operating_country ?? '')}</p>
+            <p style="font-size:13px;font-weight:600">${esc(car.make)} ${esc(car.model)} <span class="mute num">${car.year}</span></p>
+            <p class="mute num" style="font-size:11px;margin-top:1px">${esc(car.purchase_date ?? '?')} — ${esc(car.sell_date ?? '?')}${car.operating_country ? ' · ' + esc(car.operating_country) : ''}</p>
           </div>
-          <span class="pill pill-blue">Sold</span>
+          <span class="pill pill--muted">SOLD</span>
         </div>
-        <div class="grid grid-cols-3 gap-3 pt-2 border-t border-slate-700/50">
-          <div>
-            <p class="text-slate-500 text-[10px] uppercase">Bought</p>
-            <p class="text-white text-sm font-semibold">${currency} ${car.purchase_price?.toLocaleString() ?? '—'}</p>
-          </div>
-          <div>
-            <p class="text-slate-500 text-[10px] uppercase">Sold</p>
-            <p class="text-white text-sm font-semibold">${currency} ${car.sell_price?.toLocaleString() ?? '—'}</p>
-          </div>
-          <div>
-            <p class="text-slate-500 text-[10px] uppercase">Net</p>
-            <p class="${netLoss != null && netLoss < 0 ? 'text-red-400' : 'text-green-400'} text-sm font-bold">
-              ${netLoss != null ? `${netLoss >= 0 ? '+' : ''}${currency} ${netLoss.toLocaleString()}` : '—'}
-            </p>
-          </div>
+        <div class="ledger-cols" style="border-top:var(--hairline);padding-top:8px;margin-top:0">
+          <div><p class="micro">Bought</p><p class="num">${currency} ${car.purchase_price?.toLocaleString() ?? '—'}</p></div>
+          <div><p class="micro">Sold</p><p class="num">${currency} ${car.sell_price?.toLocaleString() ?? '—'}</p></div>
+          <div><p class="micro">Net</p><p class="num" style="color:${netLoss != null && netLoss < 0 ? 'var(--danger)' : 'var(--ok)'}">${netLoss != null ? `${netLoss >= 0 ? '+' : ''}${netLoss.toLocaleString()}` : '—'}</p></div>
         </div>
       </div>
     `

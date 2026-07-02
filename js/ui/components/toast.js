@@ -1,8 +1,6 @@
 export function showToast(message, type = 'success') {
   const el = document.createElement('div')
-  el.className = `pointer-events-auto px-4 py-2.5 rounded-2xl text-white text-sm font-semibold shadow-lg transition-all duration-300 ${
-    type === 'error' ? 'bg-red-500' : type === 'warning' ? 'bg-amber-500' : 'bg-emerald-500'
-  }`
+  el.className = `toast toast--${type === 'error' ? 'error' : type === 'warning' ? 'warning' : 'success'}`
   el.textContent = message
   el.style.opacity = '0'
   el.style.transform = 'translateY(-8px)'

@@ -8,12 +8,13 @@ import { openModal, closeModal, modalHandle, modalFooter } from '../components/m
 import { showToast } from '../components/toast.js'
 
 const TYPE_META = {
-  maintenance:  { label: 'Repair',       emoji: '🔧' },
-  supplies:     { label: 'Supply',       emoji: '📦' },
-  insurance:    { label: 'Insurance',    emoji: '🛡️' },
-  registration: { label: 'Registration', emoji: '📋' },
-  other:        { label: 'Other',        emoji: '📌' },
+  maintenance:  { label: 'Repairs',      code: 'RP', color: '#5A8DC8' },
+  supplies:     { label: 'Supplies',     code: 'SP', color: '#58B573' },
+  insurance:    { label: 'Insurance',    code: 'IN', color: '#8B7BC8' },
+  registration: { label: 'Registration', code: 'RG', color: '#C87BA8' },
+  other:        { label: 'Other',        code: 'OT', color: '#5E7186' },
 }
+const FUEL_COLOR = '#E8A33D'
 
 // Filter selection remembered per car — never leaks across cars.
 const filterByCar = new Map()
@@ -27,8 +28,8 @@ export async function render(container, state, epoch) {
   renderCarHeader(container, { title: 'Costs' })
 
   const loadingEl = document.createElement('div')
-  loadingEl.className = 'px-4 space-y-3'
-  loadingEl.innerHTML = Array(3).fill('<div class="skeleton h-20 rounded-2xl"></div>').join('')
+  loadingEl.className = 'section'
+  loadingEl.innerHTML = Array(3).fill('<div class="skeleton" style="height:84px;margin-bottom:10px"></div>').join('')
   container.appendChild(loadingEl)
 
   let costs, fuelTotal
@@ -42,51 +43,61 @@ export async function render(container, state, epoch) {
   loadingEl.remove()
 
   const car = state.activeCar
+  const purchase = Number(car.purchase_price) || 0
   const totalCoo = totalCostOfOwnership({
-    purchasePrice: car.purchase_price,
+    purchasePrice: purchase,
     fuelTotal,
     costsTotal: sumCosts(costs),
   })
 
+  // Proportional segments (fuel + each category; purchase excluded from bar)
+  const segments = [
+    { label: 'Fuel', color: FUEL_COLOR, value: fuelTotal },
+    ...Object.entries(TYPE_META).map(([type, meta]) => ({
+      label: meta.label, color: meta.color, value: sumCosts(costs.filter(c => c._type === type)),
+    })),
+  ].filter(s => s.value > 0)
+  const segTotal = segments.reduce((s, x) => s + x.value, 0)
+
   const summaryEl = document.createElement('div')
-  summaryEl.className = 'px-4 mb-3'
+  summaryEl.className = 'section'
   summaryEl.innerHTML = `
-    <div class="card mb-3">
-      <p class="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Total Cost of Ownership</p>
-      <p class="text-white text-3xl font-black tracking-tight">${fmtMoney(totalCoo)}</p>
-      <p class="text-slate-500 text-xs mt-1">Purchase + fuel + all costs · since ${car.purchase_date ?? '—'}</p>
+    <div class="card card--plate">
+      <p class="micro">Total cost of ownership</p>
+      <p class="num" style="font-size:28px;font-weight:600;margin-top:4px">${fmtMoney(totalCoo)}</p>
+      <p class="mute num" style="font-size:11px;margin-top:2px">purchase ${fmtMoney(purchase, { decimals: 0 })} + running ${fmtMoney(totalCoo - purchase, { decimals: 0 })} · since ${car.purchase_date ?? '—'}</p>
+      ${segTotal > 0 ? `
+      <div class="coo-bar">
+        ${segments.map(s => `<div style="width:${(s.value / segTotal * 100).toFixed(2)}%;background:${s.color}"></div>`).join('')}
+      </div>
+      <div class="coo-legend">
+        ${segments.map(s => `<span class="key"><span class="sw" style="background:${s.color}"></span>${s.label}</span>`).join('')}
+      </div>` : ''}
     </div>
-    <div class="card">
-      <div class="grid grid-cols-2 gap-3">
-        <div class="flex items-center gap-2">
-          <span class="text-base">⛽</span>
-          <div class="flex-1 min-w-0">
-            <p class="text-slate-500 text-[10px] uppercase">Fuel</p>
-            <p class="text-white text-sm font-semibold">${fmtMoney(fuelTotal)}</p>
-          </div>
-        </div>
-        ${Object.entries(TYPE_META).map(([type, meta]) => {
-          const t = sumCosts(costs.filter(c => c._type === type))
-          return `<div class="flex items-center gap-2">
-            <span class="text-base">${meta.emoji}</span>
-            <div class="flex-1 min-w-0">
-              <p class="text-slate-500 text-[10px] uppercase">${meta.label}</p>
-              <p class="text-white text-sm font-semibold">${fmtMoney(t)}</p>
+    <div class="card" style="margin-top:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 14px">
+        ${[['Fuel', 'FU', FUEL_COLOR, fuelTotal], ...Object.entries(TYPE_META).map(([type, meta]) =>
+          [meta.label, meta.code, meta.color, sumCosts(costs.filter(c => c._type === type))])]
+          .map(([label, code, color, total]) => `
+          <div class="row" style="gap:8px">
+            <span class="num" style="width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;border:1px solid ${color};color:${color};font-size:9px;border-radius:var(--r);flex-shrink:0">${code}</span>
+            <div style="min-width:0">
+              <p class="micro">${label}</p>
+              <p class="num" style="font-size:13px;font-weight:600">${fmtMoney(total)}</p>
             </div>
-          </div>`
-        }).join('')}
+          </div>`).join('')}
       </div>
     </div>
   `
   container.appendChild(summaryEl)
 
   const filterEl = document.createElement('div')
-  filterEl.className = 'px-4 mb-3 overflow-x-auto'
+  filterEl.className = 'section scroll-x'
   filterEl.innerHTML = `
-    <div class="flex gap-2 pb-1" style="width:max-content">
-      <button class="filter-btn px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeFilter === 'all' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 border border-slate-700'}" data-filter="all">All</button>
+    <div class="chip-row">
+      <button class="chip filter-btn ${activeFilter === 'all' ? 'chip--active' : ''}" data-filter="all">All</button>
       ${Object.entries(TYPE_META).map(([type, meta]) =>
-        `<button class="filter-btn px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${activeFilter === type ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400 border border-slate-700'}" data-filter="${type}">${meta.emoji} ${meta.label}</button>`
+        `<button class="chip filter-btn ${activeFilter === type ? 'chip--active' : ''}" data-filter="${type}">${meta.label}</button>`
       ).join('')}
     </div>
   `
@@ -100,36 +111,33 @@ export async function render(container, state, epoch) {
   })
 
   const listEl = document.createElement('div')
-  listEl.className = 'px-4'
+  listEl.className = 'section'
 
   const filtered = activeFilter === 'all' ? costs : costs.filter(c => c._type === activeFilter)
 
   if (filtered.length === 0) {
-    listEl.innerHTML = `<div class="text-center py-10 text-slate-600 text-sm">No entries yet. Tap + to add one.</div>`
+    listEl.innerHTML = `<div class="empty-note">No entries yet. Tap + to add one.</div>`
   } else {
     groupCostsByMonth(filtered).forEach(group => {
       const d = new Date(group.key + '-01')
       const label = d.toLocaleString('default', { month: 'long', year: 'numeric' })
 
-      listEl.innerHTML += `<div class="flex justify-between items-center mb-2">
-        <span class="section-label">${label}</span>
-        <span class="text-slate-500 text-xs">${fmtMoney(group.total)}</span>
-      </div>`
+      listEl.innerHTML += `<div class="dim-line"><span class="micro">${label}</span><span class="micro num" style="color:var(--ink)">${fmtMoney(group.total)}</span></div>`
 
       group.items.forEach(cost => {
         const meta = TYPE_META[cost._type]
         const label = cost.description || cost.item || cost.provider || cost.category || meta.label
 
         listEl.innerHTML += `
-          <div class="card flex items-center gap-3 mb-2">
-            <div class="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-base" style="background:rgba(100,116,139,0.15)">${meta.emoji}</div>
-            <div class="flex-1 min-w-0">
-              <p class="text-white text-sm font-semibold truncate">${esc(label)}</p>
-              <p class="text-slate-500 text-xs">${esc(costDate(cost) || '—')}</p>
+          <div class="card row" style="margin-bottom:8px">
+            <span class="num" style="width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid ${meta.color};color:${meta.color};font-size:9px;border-radius:var(--r);flex-shrink:0">${meta.code}</span>
+            <div style="flex:1;min-width:0">
+              <p style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</p>
+              <p class="mute num" style="font-size:11px">${esc(costDate(cost) || '—')}</p>
             </div>
-            <div class="text-right flex-shrink-0">
-              <p class="text-white font-bold">${fmtMoney(cost.cost)}</p>
-              <button data-id="${cost.id}" data-type="${cost._type}" class="delete-cost-btn text-red-400/50 text-[10px] hover:text-red-400">Delete</button>
+            <div style="text-align:right;flex-shrink:0">
+              <p class="num" style="font-weight:600">${fmtMoney(cost.cost)}</p>
+              <button data-id="${cost.id}" data-type="${cost._type}" class="delete-cost-btn btn--danger-text">DELETE</button>
             </div>
           </div>
         `
@@ -159,44 +167,44 @@ function openAddCostModal(state, onSaved) {
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
-    <h2 class="text-white text-lg font-bold mb-4">Add Cost</h2>
-    <div class="flex gap-2 overflow-x-auto pb-3 mb-4">
-      ${Object.entries(TYPE_META).map(([type, meta], i) =>
-        `<button type="button" class="type-btn flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors ${i === 0 ? 'bg-blue-500 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-slate-700'}" data-type="${type}">${meta.emoji} ${meta.label}</button>`
-      ).join('')}
+    <h2 class="modal-title">Add cost</h2>
+    <div class="scroll-x" style="margin-bottom:14px">
+      <div class="chip-row">
+        ${Object.entries(TYPE_META).map(([type, meta], i) =>
+          `<button type="button" class="chip type-btn ${i === 0 ? 'chip--active' : ''}" data-type="${type}">${meta.label}</button>`
+        ).join('')}
+      </div>
     </div>
-    <form id="cost-form" class="space-y-4">
+    <form id="cost-form" class="form-stack">
       <input type="hidden" name="cost_type" value="maintenance">
       <div>
-        <label class="section-label">Date</label>
+        <label class="micro">Date</label>
         <input type="date" name="date" value="${today}" required autocomplete="off">
       </div>
       <div>
-        <label class="section-label">Description</label>
-        <input type="text" name="description" placeholder="e.g. Front brake pads" required autocomplete="off">
+        <label class="micro">Description</label>
+        <input type="text" name="description" placeholder="Front brake pads" required autocomplete="off">
       </div>
       <div>
-        <label class="section-label">Cost (€)</label>
-        <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:20px;font-weight:700;">
+        <label class="micro">Cost (€)</label>
+        <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:19px;font-weight:600">
       </div>
       <div id="odometer-field">
-        <label class="section-label">Odometer (km)</label>
+        <label class="micro">Odometer (km)</label>
         <input type="number" name="odometer_km" inputmode="decimal" placeholder="optional" autocomplete="off">
       </div>
       <div>
-        <label class="section-label">Notes (optional)</label>
+        <label class="micro">Notes (optional)</label>
         <input type="text" name="notes" placeholder="" autocomplete="off">
       </div>
-      ${modalFooter('Cancel', 'Save Cost')}
+      ${modalFooter('Cancel', 'Save cost')}
     </form>
   `)
 
   document.querySelectorAll('.type-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.type-btn').forEach(b => {
-        b.className = b.className.replace('bg-blue-500 text-white border-transparent', 'bg-slate-900 text-slate-400 border-slate-700')
-      })
-      btn.className = btn.className.replace('bg-slate-900 text-slate-400 border-slate-700', 'bg-blue-500 text-white border-transparent')
+      document.querySelectorAll('.type-btn').forEach(b => b.classList.remove('chip--active'))
+      btn.classList.add('chip--active')
       document.querySelector('[name="cost_type"]').value = btn.dataset.type
 
       const odoField = document.getElementById('odometer-field')
@@ -231,11 +239,11 @@ function openAddCostModal(state, onSaved) {
     try {
       await addCost(type, state.activeCar.id, payload)
       closeModal()
-      showToast('Cost saved!')
+      showToast('Cost saved')
       onSaved()
     } catch (err) {
       showToast(err.message, 'error')
-      btn.textContent = 'Save Cost'
+      btn.textContent = 'Save cost'
       btn.disabled = false
     }
   })

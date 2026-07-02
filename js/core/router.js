@@ -45,16 +45,13 @@ export async function route() {
   fab.classList.toggle('hidden-fab', !FAB_PAGES.has(hash))
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
-    const active = btn.dataset.hash === hash
-    btn.classList.toggle('text-blue-400', active)
-    btn.classList.toggle('text-slate-500', !active)
-    btn.querySelector('svg')?.setAttribute('stroke', active ? '#60a5fa' : '#64748b')
+    btn.classList.toggle('active', btn.dataset.hash === hash)
   })
 
-  app.innerHTML = `<div class="p-4 space-y-3">
-    <div class="skeleton h-32 w-full"></div>
-    <div class="skeleton h-24 w-full"></div>
-    <div class="skeleton h-40 w-full"></div>
+  app.innerHTML = `<div style="padding:16px;display:grid;gap:12px">
+    <div class="skeleton" style="height:128px"></div>
+    <div class="skeleton" style="height:96px"></div>
+    <div class="skeleton" style="height:160px"></div>
   </div>`
 
   try {
@@ -65,10 +62,10 @@ export async function route() {
   } catch (err) {
     if (isStale(myEpoch)) return
     console.error(err)
-    app.innerHTML = `<div class="flex flex-col items-center justify-center p-8 text-center" style="min-height:60dvh">
-      <p class="text-red-400 font-semibold mb-2">Something went wrong</p>
-      <p class="text-slate-500 text-sm">${String(err?.message ?? err)}</p>
-      <button onclick="location.reload()" class="mt-4 px-4 py-2 bg-slate-700 text-slate-300 rounded-xl text-sm">Retry</button>
+    app.innerHTML = `<div class="center-screen">
+      <p style="color:var(--danger);font-weight:600;margin-bottom:8px">Something went wrong</p>
+      <p class="mute" style="font-size:13px">${String(err?.message ?? err)}</p>
+      <button onclick="location.reload()" class="btn" style="margin-top:16px">Retry</button>
     </div>`
   }
 }
