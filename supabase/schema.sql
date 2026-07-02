@@ -126,6 +126,16 @@ create table if not exists other_costs (
 -- Ensure the full-tank flag exists on databases created before it was added.
 alter table fuel_logs add column if not exists is_full_tank boolean not null default true;
 
+-- 2026-07 refactor (see supabase/migrations/001_refactor_2026-07.sql)
+create index if not exists idx_fuel_logs_car_date  on fuel_logs (car_id, date, id);
+create index if not exists idx_maint_logs_car_date on maintenance_logs (car_id, date);
+create index if not exists idx_supplies_car_date   on supplies (car_id, date);
+create index if not exists idx_insurance_car_start on insurance_records (car_id, start_date);
+create index if not exists idx_registrations_car   on registrations (car_id, date);
+create index if not exists idx_other_costs_car     on other_costs (car_id, date);
+alter table cars add column if not exists tank_capacity_l numeric;
+update fuel_logs set is_full_tank = true where is_full_tank is null;
+
 -- ============================================================
 -- Seed data — existing cars from Excel files
 -- ============================================================
