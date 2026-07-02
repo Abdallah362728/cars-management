@@ -1,4 +1,4 @@
-const CACHE = 'cars-v4'
+const CACHE = 'cars-v5'
 
 self.addEventListener('install', e => {
   self.skipWaiting()
@@ -36,9 +36,10 @@ self.addEventListener('fetch', e => {
     return
   }
 
-  // App files — network first so deploys show immediately, cache as offline fallback
+  // App files — always revalidate with the server (bypass the HTTP cache) so a
+  // deploy shows immediately; keep a copy for offline fallback.
   e.respondWith(
-    fetch(e.request).then(r => {
+    fetch(e.request, { cache: 'no-cache' }).then(r => {
       const clone = r.clone()
       caches.open(CACHE).then(c => c.put(e.request, clone))
       return r

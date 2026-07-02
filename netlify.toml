@@ -3,13 +3,27 @@
   to   = "/index.html"
   status = 200
 
+# The service worker must never be cached, or clients get stuck on an old one.
 [[headers]]
   for = "/sw.js"
   [headers.values]
     Service-Worker-Allowed = "/"
     Cache-Control = "no-cache"
 
+# No-build app: source files are the deploy artifact, so they must always be
+# revalidated (Netlify answers 304 via ETag when unchanged — cheap and fresh).
+# A long max-age here is what makes deploys appear not to update.
 [[headers]]
   for = "/*.js"
   [headers.values]
-    Cache-Control = "public, max-age=3600"
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+[[headers]]
+  for = "/index.html"
+  [headers.values]
+    Cache-Control = "no-cache"
