@@ -34,6 +34,7 @@ export async function render(container, state, epoch) {
   const spec = Number(state.activeCar.factory_fuel_spec) || null
   const avgL100 = stats.blendedAvgL100 ?? stats.measuredAvgL100
   const avgColor = avgL100 == null ? '' : avgL100 > (spec ?? 999) + 1 ? 'color:var(--danger)' : 'color:var(--ok)'
+  const avgIsEstimate = avgL100 != null && avgL100 === stats.blendedAvgL100 && stats.blendedIncludesEstimates
 
   const statsEl = document.createElement('div')
   statsEl.className = 'section'
@@ -48,7 +49,7 @@ export async function render(container, state, epoch) {
         <p class="micro">Total</p>
       </div>
       <div>
-        <p class="stat-value num" style="${avgColor}">${fmtNum(avgL100)}</p>
+        <p class="stat-value num" style="${avgColor}">${avgIsEstimate ? '~' : ''}${fmtNum(avgL100)}</p>
         <p class="micro">L/100</p>
       </div>
       <div>
@@ -73,7 +74,8 @@ export async function render(container, state, epoch) {
     })
 
     Object.entries(groups).forEach(([key, entries]) => {
-      const d = new Date(key + '-01')
+      const [gy, gm] = key.split('-').map(Number)
+      const d = new Date(gy, gm - 1, 1)
       const label = d.toLocaleString('default', { month: 'long', year: 'numeric' })
       const monthTotal = entries.reduce((s, l) => s + l.total_cost, 0)
 
@@ -143,12 +145,14 @@ export async function render(container, state, epoch) {
   container.querySelectorAll('.delete-fuel-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this fill-up?')) return
+      btn.disabled = true
       try {
         await deleteFuelLog(parseInt(btn.dataset.id))
         showToast('Deleted')
         route()
       } catch (err) {
         showToast(err.message, 'error')
+        btn.disabled = false
       }
     })
   })

@@ -76,6 +76,7 @@ export async function render(container, state, epoch) {
   const { stats } = data
   const spec = Number(state.activeCar.factory_fuel_spec) || null
   const avgL100 = stats.blendedAvgL100 ?? stats.measuredAvgL100
+  const avgIsEstimate = avgL100 != null && avgL100 === stats.blendedAvgL100 && stats.blendedIncludesEstimates
   const overSpec = avgL100 != null && spec != null && avgL100 > spec + 1
   const vsFactory = (avgL100 != null && spec) ? round(avgL100 - spec, 1) : null
   const last = stats.lastFuel
@@ -90,7 +91,7 @@ export async function render(container, state, epoch) {
           avgL100,
           eur100: stats.blendedEurPer100km,
           totalKm: stats.totalKm,
-          isEstimate: stats.measuredAvgL100 == null && avgL100 != null,
+          isEstimate: avgIsEstimate || (stats.measuredAvgL100 == null && avgL100 != null),
         })}
       </div>
     </div>
@@ -98,7 +99,7 @@ export async function render(container, state, epoch) {
     <div class="section stat-grid">
       <div class="card stat">
         <p class="micro">Avg fuel use</p>
-        <p class="stat-value num" style="${overSpec ? 'color:var(--danger)' : avgL100 != null ? 'color:var(--ok)' : ''}">${fmtNum(avgL100)} <span style="font-size:11px;color:var(--ink-mute);font-weight:400">L/100</span></p>
+        <p class="stat-value num" style="${overSpec ? 'color:var(--danger)' : avgL100 != null ? 'color:var(--ok)' : ''}">${avgIsEstimate ? '~' : ''}${fmtNum(avgL100)} <span style="font-size:11px;color:var(--ink-mute);font-weight:400">L/100</span></p>
         <p class="stat-sub num">${vsFactory != null ? `${vsFactory > 0 ? '▲' : '▼'} ${Math.abs(vsFactory)} vs spec ${spec}` : (spec ? `spec ${spec}` : 'no factory spec')}</p>
       </div>
       <div class="card stat">
@@ -122,7 +123,7 @@ export async function render(container, state, epoch) {
       <div class="card">
         <div class="row-between" style="margin-bottom:10px">
           <p class="micro" style="color:var(--ink)">Fuel efficiency trend</p>
-          <span class="micro num">last ${data.trend.length} fills</span>
+          <span class="micro num">${data.trend.length} points</span>
         </div>
         <div style="position:relative;height:120px">
           <canvas id="trend-chart"></canvas>

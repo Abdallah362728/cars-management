@@ -171,6 +171,18 @@ test('monthlySpend buckets by calendar month without end-of-month drift', () => 
   assert.deepEqual(m.map(x => x.total), [30, 128, 0])
 })
 
+test('blendedIncludesEstimates flags blended averages built from partial fills', () => {
+  const withPartial = computeFuelStats(enrich(MERCEDES))
+  assert.equal(withPartial.blendedIncludesEstimates, true)
+
+  const allFull = computeFuelStats(enrich([
+    fill('2026-01-01', 1000, 40, 80),
+    fill('2026-02-01', 1500, 35, 70),
+    fill('2026-03-01', 2000, 38, 76),
+  ]))
+  assert.equal(allFull.blendedIncludesEstimates, false)
+})
+
 test('daysSince', () => {
   assert.equal(daysSince('2026-06-28', new Date('2026-07-02T12:00:00Z')), 4)
   assert.equal(daysSince(null), null)
