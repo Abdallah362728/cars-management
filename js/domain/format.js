@@ -13,9 +13,11 @@ export function daysBetween(a, b) {
 }
 
 export function addMonths(dateStr, months) {
-  const d = new Date(dateStr)
-  d.setMonth(d.getMonth() + months)
-  return d
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const t = new Date(Date.UTC(y, m - 1 + months, 1))
+  const lastDay = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate()
+  t.setUTCDate(Math.min(d, lastDay))
+  return t
 }
 
 export function todayStr(today = new Date()) {
