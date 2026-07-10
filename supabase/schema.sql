@@ -215,3 +215,9 @@ cross join (values
   ('2026-02-18', 1760,  24.8,  34.50)
 ) as f(d, odo, lit, cost)
 where c.model = 'Pixo';
+
+-- TODO (security): RLS is not enabled. When adding auth, run for EACH table:
+--   alter table <t> enable row level security;
+--   create policy "authenticated full access" on <t>
+--     for all to authenticated using (true) with check (true);
+-- and remove anon write access.
