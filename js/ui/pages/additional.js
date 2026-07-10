@@ -5,20 +5,13 @@ import { getCars } from '../../data/cars-repo.js'
 import { computeScheduleStatus } from '../../domain/schedule.js'
 import { esc } from '../../domain/format.js'
 import { isStale, route } from '../../core/router.js'
+import { renderCarHeader } from '../components/car-header.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
 
 export async function render(container, state, epoch) {
   container.innerHTML = ''
-
-  const header = document.createElement('div')
-  header.className = 'page-title'
-  header.innerHTML = `
-    <p class="micro" style="margin-bottom:3px">Service</p>
-    <h1>Maintenance</h1>
-    <p class="mute" style="font-size:12px;margin-top:2px">Schedule & vehicle history</p>
-  `
-  container.appendChild(header)
+  renderCarHeader(container, { title: 'Service' })
 
   if (state.activeCar) {
     await renderSchedule(container, state, epoch)
@@ -93,7 +86,7 @@ async function renderSchedule(container, state, epoch) {
 
   withStatus.forEach(({ item, computed }) => {
     let subtitle = ''
-    if (item.interval_km)     subtitle += `EVERY ${item.interval_km.toLocaleString()} KM`
+    if (item.interval_km)     subtitle += `EVERY ${Number(item.interval_km).toLocaleString()} KM`
     if (item.interval_months) subtitle += (subtitle ? ' / ' : 'EVERY ') + `${item.interval_months} MO`
     if (item.last_done_date)  subtitle += ` · DONE ${item.last_done_date}`
 
@@ -113,14 +106,15 @@ async function renderSchedule(container, state, epoch) {
       </div>
       <span class="pill ${pillMap[computed.status]}">${computed.label.toUpperCase()}</span>
     `
-    row.addEventListener('click', () => openMarkDoneModal(item, state))
+    row.addEventListener('click', () => openMarkDoneModal(item, state, lastOdometer))
     schedEl.appendChild(row)
   })
 
   container.appendChild(schedEl)
 }
 
-function openMarkDoneModal(item, state) {
+function openMarkDoneModal(item, state, lastOdometer) {
+  const carId = state.activeCar.id
   const today = new Date().toISOString().slice(0, 10)
   openModal(`
     ${modalHandle()}
@@ -133,7 +127,7 @@ function openMarkDoneModal(item, state) {
       </div>
       <div>
         <label class="micro">Odometer at time (km)</label>
-        <input type="number" name="done_km" inputmode="decimal" placeholder="optional" autocomplete="off" style="font-size:19px;font-weight:600">
+        <input type="number" name="done_km" inputmode="decimal" value="${lastOdometer ?? ''}" placeholder="optional" autocomplete="off" style="font-size:19px;font-weight:600">
       </div>
       <div>
         <label class="micro">Cost (€)</label>
@@ -160,31 +154,31 @@ function openMarkDoneModal(item, state) {
     const notes = fd.get('notes') || null
 
     try {
-      await updateScheduleItem(item.id, {
-        last_done_date: doneDate,
-        last_done_km: doneKm,
-      })
-
-      if (cost > 0) {
-        await addCost('maintenance', state.activeCar.id, {
-          date: doneDate,
-          odometer_km: doneKm,
-          category: item.item_name,
-          description: item.item_name,
-          cost,
-          notes,
-          currency: 'EUR',
-        })
-      }
-
-      closeModal()
-      showToast(`${item.item_name} marked as done`)
-      route()
+      await updateScheduleItem(item.id, { last_done_date: doneDate, last_done_km: doneKm })
     } catch (err) {
       showToast(err.message, 'error')
       btn.textContent = 'Mark as done'
       btn.disabled = false
+      return
     }
+
+    let costWarning = null
+    if (cost > 0 || notes) {
+      try {
+        await addCost('maintenance', carId, {
+          date: doneDate, odometer_km: doneKm, category: item.item_name,
+          description: item.item_name, cost, notes, currency: 'EUR',
+        })
+      } catch (err) {
+        costWarning = err.message
+      }
+    }
+
+    closeModal()
+    showToast(costWarning
+      ? `${item.item_name} marked done — but the log entry failed: ${costWarning}. Add it in Costs.`
+      : `${item.item_name} marked as done`, costWarning ? 'error' : undefined)
+    route()
   })
 }
 
@@ -219,8 +213,8 @@ async function renderCarHistory(container, epoch) {
           <span class="pill pill--muted">SOLD</span>
         </div>
         <div class="ledger-cols" style="border-top:var(--hairline);padding-top:8px;margin-top:0">
-          <div><p class="micro">Bought</p><p class="num">${currency} ${car.purchase_price?.toLocaleString() ?? '—'}</p></div>
-          <div><p class="micro">Sold</p><p class="num">${currency} ${car.sell_price?.toLocaleString() ?? '—'}</p></div>
+          <div><p class="micro">Bought</p><p class="num">${currency} ${car.purchase_price != null ? Number(car.purchase_price).toLocaleString() : '—'}</p></div>
+          <div><p class="micro">Sold</p><p class="num">${currency} ${car.sell_price != null ? Number(car.sell_price).toLocaleString() : '—'}</p></div>
           <div><p class="micro">Net</p><p class="num" style="color:${netLoss != null && netLoss < 0 ? 'var(--danger)' : 'var(--ok)'}">${netLoss != null ? `${netLoss >= 0 ? '+' : ''}${netLoss.toLocaleString()}` : '—'}</p></div>
         </div>
       </div>
