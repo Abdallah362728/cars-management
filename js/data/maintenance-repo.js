@@ -17,6 +17,16 @@ export async function updateScheduleItem(id, updates) {
   if (error) throw error
 }
 
+export async function addScheduleItem(carId, payload) {
+  const { error } = await supabase.from('maintenance_schedules').insert({ car_id: carId, ...payload })
+  if (error) throw error
+}
+
+export async function deleteScheduleItem(id) {
+  const { error } = await supabase.from('maintenance_schedules').delete().eq('id', id)
+  if (error) throw error
+}
+
 export async function getMaintenanceLogs(carId) {
   const { data, error } = await supabase
     .from('maintenance_logs')

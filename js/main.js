@@ -11,7 +11,13 @@ async function bootstrap() {
 
   try {
     setCars(await getCars())
-    setActiveCar(state.cars.find(c => c.status === 'active') ?? state.cars[0] ?? null)
+    const savedId = Number(localStorage.getItem('activeCarId')) || null
+    setActiveCar(
+      state.cars.find(c => c.id === savedId)
+      ?? state.cars.find(c => c.status === 'active')
+      ?? state.cars[0]
+      ?? null
+    )
   } catch (err) {
     console.error(err)
     document.getElementById('app').innerHTML = `

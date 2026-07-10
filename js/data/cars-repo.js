@@ -16,3 +16,8 @@ export async function updateCar(id, updates) {
   const { error } = await supabase.from('cars').update(updates).eq('id', id)
   if (error) throw error
 }
+
+export async function addCar(payload) {
+  const { error } = await supabase.from('cars').insert(payload)
+  if (error) throw error
+}

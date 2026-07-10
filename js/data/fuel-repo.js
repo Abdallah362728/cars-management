@@ -24,6 +24,11 @@ export async function deleteFuelLog(id) {
   if (error) throw error
 }
 
+export async function updateFuelLog(id, updates) {
+  const { error } = await supabase.from('fuel_logs').update(updates).eq('id', id)
+  if (error) throw error
+}
+
 // Total fuel spend (for cost-of-ownership on the costs page).
 export async function getFuelTotal(carId) {
   const { data, error } = await supabase
