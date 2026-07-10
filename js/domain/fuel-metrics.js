@@ -131,6 +131,7 @@ export function computeFuelStats(enriched) {
     totalKm: totalKm > 0 ? totalKm : null,
     measuredAvgL100,
     blendedAvgL100,
+    blendedIncludesEstimates: withLeg.some(r => !r.is_full_tank),
     blendedEurPer100km,
     costPerKm: blendedEurPer100km != null ? round(blendedEurPer100km / 100, 3) : null,
     lastFuel: last,

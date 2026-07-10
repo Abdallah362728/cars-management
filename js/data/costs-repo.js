@@ -49,3 +49,10 @@ export async function deleteCost(type, id) {
   const { error } = await supabase.from(meta.table).delete().eq('id', id)
   if (error) throw error
 }
+
+export async function updateCost(type, id, updates) {
+  const meta = COST_TYPES[type]
+  if (!meta) throw new Error(`Unknown cost type: ${type}`)
+  const { error } = await supabase.from(meta.table).update(updates).eq('id', id)
+  if (error) throw error
+}

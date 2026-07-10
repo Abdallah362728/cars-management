@@ -29,3 +29,17 @@ test('worst of km and date wins', () => {
   const s = computeScheduleStatus(item, 91000, TODAY)   // km overdue, date fine
   assert.equal(s.status, 'overdue')
 })
+
+test('coerces string numerics from Supabase', () => {
+  const item = { interval_km: '10000', last_done_km: '80000' }
+  const s = computeScheduleStatus(item, 95000, TODAY)
+  assert.equal(s.status, 'overdue')
+  assert.equal(s.kmRemaining, -5000)
+})
+
+test('insufficient data shows "Needs data" instead of a false OK', () => {
+  const item = { interval_km: 40000, interval_months: null, last_done_date: '2026-01-01', last_done_km: null }
+  const s = computeScheduleStatus(item, 90000, TODAY)
+  assert.equal(s.status, 'never_done')
+  assert.equal(s.label, 'Needs data')
+})

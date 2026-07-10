@@ -1,7 +1,7 @@
 import { getAllCosts, addCost, deleteCost } from '../../data/costs-repo.js'
 import { getFuelTotal } from '../../data/fuel-repo.js'
 import { costDate, sumCosts, groupCostsByMonth, totalCostOfOwnership } from '../../domain/costs.js'
-import { esc, fmtMoney } from '../../domain/format.js'
+import { esc, fmtMoney, daysBetween } from '../../domain/format.js'
 import { isStale, route } from '../../core/router.js'
 import { renderCarHeader } from '../components/car-header.js'
 import { openModal, closeModal, modalHandle, modalFooter } from '../components/modal.js'
@@ -119,7 +119,8 @@ export async function render(container, state, epoch) {
     listEl.innerHTML = `<div class="empty-note">No entries yet. Tap + to add one.</div>`
   } else {
     groupCostsByMonth(filtered).forEach(group => {
-      const d = new Date(group.key + '-01')
+      const [gy, gm] = group.key.split('-').map(Number)
+      const d = new Date(gy, gm - 1, 1)
       const label = d.toLocaleString('default', { month: 'long', year: 'numeric' })
 
       listEl.innerHTML += `<div class="dim-line"><span class="micro">${label}</span><span class="micro num" style="color:var(--ink)">${fmtMoney(group.total)}</span></div>`
@@ -128,12 +129,18 @@ export async function render(container, state, epoch) {
         const meta = TYPE_META[cost._type]
         const label = cost.description || cost.item || cost.provider || cost.category || meta.label
 
+        let subtitle = costDate(cost) || '—'
+        if (cost._type === 'insurance' && cost.end_date) {
+          const months = Math.max(1, Math.round(daysBetween(cost.start_date, cost.end_date) / 30.44))
+          subtitle += ` — ${cost.end_date} · ≈ ${fmtMoney(Number(cost.cost) / months)}/mo`
+        }
+
         listEl.innerHTML += `
           <div class="card row" style="margin-bottom:8px">
             <span class="num" style="width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border:1px solid ${meta.color};color:${meta.color};font-size:9px;border-radius:var(--r);flex-shrink:0">${meta.code}</span>
             <div style="flex:1;min-width:0">
               <p style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(label)}</p>
-              <p class="mute num" style="font-size:11px">${esc(costDate(cost) || '—')}</p>
+              <p class="mute num" style="font-size:11px">${esc(subtitle)}</p>
             </div>
             <div style="text-align:right;flex-shrink:0">
               <p class="num" style="font-weight:600">${fmtMoney(cost.cost)}</p>
@@ -150,12 +157,14 @@ export async function render(container, state, epoch) {
   container.querySelectorAll('.delete-cost-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (!confirm('Delete this cost entry?')) return
+      btn.disabled = true
       try {
         await deleteCost(btn.dataset.type, parseInt(btn.dataset.id))
         showToast('Deleted')
         route()
       } catch (err) {
         showToast(err.message, 'error')
+        btn.disabled = false
       }
     })
   })
@@ -185,6 +194,10 @@ function openAddCostModal(state, onSaved) {
         <label class="micro">Description</label>
         <input type="text" name="description" placeholder="Front brake pads" required autocomplete="off">
       </div>
+      <div id="end-date-field" style="display:none">
+        <label class="micro">Coverage until (optional)</label>
+        <input type="date" name="end_date" autocomplete="off">
+      </div>
       <div>
         <label class="micro">Cost (€)</label>
         <input type="number" name="cost" inputmode="decimal" step="0.01" placeholder="0.00" required autocomplete="off" style="font-size:19px;font-weight:600">
@@ -209,6 +222,7 @@ function openAddCostModal(state, onSaved) {
 
       const odoField = document.getElementById('odometer-field')
       if (odoField) odoField.style.display = btn.dataset.type === 'maintenance' ? '' : 'none'
+      document.getElementById('end-date-field').style.display = btn.dataset.type === 'insurance' ? '' : 'none'
     })
   })
 
@@ -232,7 +246,7 @@ function openAddCostModal(state, onSaved) {
     const desc = fd.get('description')
     if (type === 'maintenance')  { payload.date = date; payload.description = desc; const o = fd.get('odometer_km'); if (o) payload.odometer_km = parseFloat(o) }
     if (type === 'supplies')     { payload.date = date; payload.item = desc }
-    if (type === 'insurance')    { payload.start_date = date; payload.provider = desc }
+    if (type === 'insurance')    { payload.start_date = date; payload.provider = desc; payload.end_date = fd.get('end_date') || null }
     if (type === 'registration') { payload.date = date; payload.description = desc }
     if (type === 'other')        { payload.date = date; payload.description = desc }
 

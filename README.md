@@ -237,10 +237,16 @@ Point Netlify (or any static host) at the repository root and you're live.
 | **Frontend** | Vanilla JavaScript, native ES modules — no framework, no bundler |
 | **Charts** | [Chart.js](https://www.chartjs.org/) 4.5.1 (pinned, via CDN) |
 | **Styling** | Hand-written CSS with a custom-property token system |
-| **Database** | Supabase (Postgres + RLS) |
+| **Database** | Postgres (⚠ RLS not yet enabled — data is publicly writable; auth + policies planned) |
 | **PWA** | Web App Manifest + service worker |
 | **Hosting** | Netlify (static, zero-build) |
 | **Tests** | `node:test` (built-in) |
+
+---
+
+## Known security gap
+
+The Supabase project currently has **no row-level security policies** — the public anon key grants full read/write/delete access to every table to anyone who has it. Do not share the app URL publicly until auth + RLS are added. See `supabase/schema.sql` for the TODO covering the policies to add.
 
 ---
 

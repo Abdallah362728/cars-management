@@ -12,6 +12,7 @@ const PAGES = {
   '#fuel':       () => import('../ui/pages/fuel.js'),
   '#costs':      () => import('../ui/pages/costs.js'),
   '#additional': () => import('../ui/pages/additional.js'),
+  '#settings':   () => import('../ui/pages/settings.js'),
 }
 
 const FAB_PAGES = new Set(['#dashboard', '#fuel', '#costs'])

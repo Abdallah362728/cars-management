@@ -11,6 +11,7 @@ export function setCars(cars) {
 
 export function setActiveCar(car) {
   state.activeCar = car ?? null
+  try { localStorage.setItem('activeCarId', car?.id ?? '') } catch {}
 }
 
 export function activeCars() {
