@@ -29,6 +29,10 @@ export function isStale(e) {
 }
 
 export async function route() {
+  // While the auth gate is up, main.js owns #app: a stray hashchange (the back
+  // button, a restored deep link) must not draw a page over the login screen.
+  if (document.body.classList.contains('signed-out')) return
+
   epoch++
   const myEpoch = epoch
 

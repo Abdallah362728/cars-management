@@ -299,6 +299,11 @@ input[type="date"] { color-scheme: dark; }
 #fab:active { transform: scale(0.92); }
 #fab.hidden-fab { opacity: 0; pointer-events: none; }
 
+/* Signed out: the login screen owns the viewport — no nav, no FAB. */
+body.signed-out #nav,
+body.signed-out #fab { display: none; }
+body.signed-out #main { padding-bottom: 0; }
+
 /* ── Bottom-sheet modal ── */
 #modal {
   position: fixed;

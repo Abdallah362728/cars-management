@@ -216,8 +216,61 @@ cross join (values
 ) as f(d, odo, lit, cost)
 where c.model = 'Pixo';
 
--- TODO (security): RLS is not enabled. When adding auth, run for EACH table:
---   alter table <t> enable row level security;
---   create policy "authenticated full access" on <t>
---     for all to authenticated using (true) with check (true);
--- and remove anon write access.
+-- ============================================================
+-- Security — per-user row-level security
+-- (standalone + setup steps: supabase/migrations/002_enable_rls.sql)
+-- ============================================================
+
+-- Ownership lives only on cars; every other table reaches it through car_id.
+-- `default auth.uid()` stamps the inserting account, so the app never sets it.
+alter table cars add column if not exists user_id uuid references auth.users(id) on delete cascade;
+alter table cars alter column user_id set default auth.uid();
+create index if not exists idx_cars_user on cars (user_id);
+
+-- security definer so the check reads `cars` directly instead of recursing
+-- through the policy being evaluated.
+create or replace function public.owns_car(cid bigint)
+  returns boolean
+  language sql
+  security definer
+  stable
+  set search_path = public
+as $$
+  select exists (select 1 from cars where id = cid and user_id = auth.uid());
+$$;
+
+revoke execute on function public.owns_car(bigint) from anon;
+grant  execute on function public.owns_car(bigint) to authenticated;
+
+alter table cars enable row level security;
+drop policy if exists "own cars" on cars;
+create policy "own cars" on cars
+  for all to authenticated
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+revoke all on cars from anon;
+
+do $$
+declare
+  t text;
+  tables text[] := array[
+    'fuel_logs', 'maintenance_logs', 'maintenance_schedules',
+    'supplies', 'insurance_records', 'registrations', 'other_costs'
+  ];
+begin
+  foreach t in array tables loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('drop policy if exists "own car rows" on public.%I', t);
+    execute format(
+      'create policy "own car rows" on public.%I for all to authenticated '
+      || 'using (public.owns_car(car_id)) with check (public.owns_car(car_id))',
+      t
+    );
+    execute format('revoke all on public.%I from anon', t);
+  end loop;
+end $$;
+
+-- The seed cars above were inserted without an owner (auth.uid() is null in the
+-- SQL editor), and a null owner matches nobody. Attach them to your account:
+--   update cars set user_id = (select id from auth.users where email = 'you@example.com')
+--   where user_id is null;

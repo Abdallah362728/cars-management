@@ -47,7 +47,19 @@ export async function render(container, state, epoch) {
   cleanup()
 
   if (!state.activeCar) {
-    container.innerHTML = `<div class="center-screen mute">No active car found.</div>`
+    // A brand-new account starts with an empty garage, so this is a first-run
+    // screen, not just an error state — it has to lead somewhere.
+    const empty = state.cars.length === 0
+    container.innerHTML = `
+      <div class="center-screen">
+        <p style="font-weight:600;margin-bottom:6px">${empty ? 'Your garage is empty' : 'No active car'}</p>
+        <p class="mute" style="font-size:13px;max-width:260px">${empty
+          ? 'Add your first car to start tracking fuel, costs and service.'
+          : 'Every car is sold or stored. Mark one active, or add another.'}</p>
+        <a href="#settings" class="btn btn--primary" style="margin-top:16px;display:inline-block">
+          ${empty ? 'Add your first car' : 'Open Settings'}
+        </a>
+      </div>`
     return
   }
 

@@ -130,12 +130,12 @@ cars-management/
 │
 ├── js/
 │   ├── config.js           # Supabase URL + public anon key (single config point)
-│   ├── main.js             # Bootstrap: load cars → pick active → start router
-│   ├── core/               # router.js (epoch guard) · state.js
+│   ├── main.js             # Bootstrap: gate on session → load cars → start router
+│   ├── core/               # router.js (epoch guard) · state.js · auth.js
 │   ├── data/               # Supabase repositories (queries only)
 │   ├── domain/             # 🧮 Pure, unit-tested logic (fuel, costs, schedule, format)
 │   └── ui/
-│       ├── pages/          # dashboard · fuel · costs · additional
+│       ├── pages/          # dashboard · fuel · costs · additional · settings · login
 │       └── components/     # charts · modal · toast · car-header · car-schematic
 │
 ├── supabase/
@@ -200,12 +200,17 @@ cd cars-management
 # 2 — set up the database
 #     open your Supabase project's SQL editor and run:
 #       supabase/schema.sql
-#     (creates all tables + seed rows)
+#     (creates all tables + seed rows, and enables per-user RLS)
 
-# 3 — point the app at your project
+# 3 — create your account, then claim the seed data
+#     sign up in the app (or Dashboard → Authentication → Users),
+#     then run supabase/migrations/002_enable_rls.sql — it attaches
+#     the existing rows to your account (see "Security" below)
+
+# 4 — point the app at your project
 #     edit js/config.js with your Supabase URL and public anon key
 
-# 4 — run it locally
+# 5 — run it locally
 npm run dev          # serves at http://localhost:3000
 ```
 
@@ -237,16 +242,41 @@ Point Netlify (or any static host) at the repository root and you're live.
 | **Frontend** | Vanilla JavaScript, native ES modules — no framework, no bundler |
 | **Charts** | [Chart.js](https://www.chartjs.org/) 4.5.1 (pinned, via CDN) |
 | **Styling** | Hand-written CSS with a custom-property token system |
-| **Database** | Postgres (⚠ RLS not yet enabled — data is publicly writable; auth + policies planned) |
+| **Database** | Postgres + per-user row-level security (anon key reads nothing) |
 | **PWA** | Web App Manifest + service worker |
 | **Hosting** | Netlify (static, zero-build) |
+| **Auth** | Supabase email + password; every account gets its own garage |
 | **Tests** | `node:test` (built-in) |
 
 ---
 
-## Known security gap
+## Security
 
-The Supabase project currently has **no row-level security policies** — the public anon key grants full read/write/delete access to every table to anyone who has it. Do not share the app URL publicly until auth + RLS are added. See `supabase/schema.sql` for the TODO covering the policies to add.
+The app is **multi-tenant**: every account sees only its own cars, and everything hanging off them. Sign up and you start with an empty garage.
+
+Every table is behind row-level security, so the anon key in [`js/config.js`](js/config.js) is public by design — on its own it reads and writes nothing.
+
+Ownership lives in exactly one place: **`cars.user_id`**. The other seven tables already reference a car, so their policies ask "do you own this row's car?" via a `security definer` helper, `owns_car(car_id)`. `cars.user_id` defaults to `auth.uid()`, so the browser never sets it — a row is stamped with whoever inserted it.
+
+| Who | Sees |
+|---|---|
+| Anyone with the anon key, not signed in | Nothing — denied at the grant level |
+| A signed-in account | Only its own cars, fuel, costs, service history |
+| A brand-new sign-up | An empty garage |
+
+### Setting it up on a new database
+
+1. **Run the schema:** [`supabase/schema.sql`](supabase/schema.sql) in the SQL editor — tables, seed rows, and the security block.
+2. **Create your account:** sign up through the app, or Dashboard → Authentication → Users → *Add user*.
+3. **Apply the policies:** run [`supabase/migrations/002_enable_rls.sql`](supabase/migrations/002_enable_rls.sql). It adds `cars.user_id`, enables RLS on all eight tables, creates the policies, revokes the `anon` grants, and **backfills any pre-existing cars to your account**. It is idempotent.
+
+The backfill matters: rows created before this migration have no owner, and a null owner matches nobody — they would silently disappear from the app. If exactly one account exists, the migration assigns them to it automatically; if several do, it aborts and tells you to name the owning address rather than guessing.
+
+> **Order matters on a live app:** run the migration *before* deploying the new front-end. The deployed app requires a session, so a browser loading it against a database with no accounts has nothing to sign in with.
+
+### On open sign-up
+
+Anyone who finds the URL can register and store data in your Supabase project. RLS keeps their data and yours completely separate, but they are still **your** rows against **your** free-tier quota. If you would rather it stay invite-only, turn off Authentication → Providers → Email → *Allow new users to sign up* and create accounts yourself in the dashboard — the per-user separation works exactly the same either way.
 
 ---
 
