@@ -7,6 +7,7 @@ import { esc, fmtMoney, fmtNum } from '../../domain/format.js'
 import { isStale, route } from '../../core/router.js'
 import { openModal, closeModal, modalHandle, modalFooter, tankToggleField, setupTankToggle } from '../components/modal.js'
 import { showToast } from '../components/toast.js'
+import { getSession, signOut } from '../../core/auth.js'
 
 const ENTITIES = {
   fuel:         { label: 'Fuel' },
@@ -58,6 +59,39 @@ export async function render(container, state, epoch) {
 
   renderCarsSection(container, state)
   await renderDataSection(container, state, epoch)
+  await renderAccountSection(container, epoch)
+}
+
+async function renderAccountSection(container, epoch) {
+  let email = ''
+  try {
+    email = (await getSession())?.user?.email ?? ''
+  } catch { /* the address is a nicety; the button still works without it */ }
+  if (isStale(epoch)) return
+
+  const el = document.createElement('div')
+  el.className = 'section'
+  el.innerHTML = `
+    <div class="dim-line"><span class="micro">Account</span></div>
+    <div class="card row-between">
+      <div style="min-width:0">
+        <p style="font-size:13px;font-weight:600">Signed in</p>
+        <p class="mute" style="font-size:11px;margin-top:1px;overflow:hidden;text-overflow:ellipsis">${esc(email || '—')}</p>
+      </div>
+      <button id="sign-out-btn" class="btn btn--ghost btn--micro" style="flex-shrink:0">Sign out</button>
+    </div>`
+  container.appendChild(el)
+
+  // main.js listens for the sign-out event and swaps in the login screen.
+  el.querySelector('#sign-out-btn').addEventListener('click', async e => {
+    e.target.disabled = true
+    try {
+      await signOut()
+    } catch (err) {
+      e.target.disabled = false
+      showToast(err.message, 'error')
+    }
+  })
 }
 
 function renderCarsSection(container, state) {
